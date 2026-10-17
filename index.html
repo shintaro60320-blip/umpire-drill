@@ -5068,6 +5068,24 @@ var FIG = (() => {
         pelvis = add(pelvis, d);
       }
     }
+    // ★走って塁を踏む足（アストラ 2026-10-17 E）：塁の上を通る瞬間、低い方の足の靴を塁の上面へ届かせる。
+    //   走る足の運び（歩数）と塁の位置は別々に決まるので、そのままやと判定の時刻に足が塁の手前や先に着いとった。
+    //   脚を2本の骨で届かせ、届かん分だけ体ごと水平に寄せる（体を持ち上げると地面の足が浮くのでせん）
+    //   plant: { pt:[x,z], y: 塁の上面の高さ, w: 重み }
+    if (o.plant && o.plant.w > 0) {
+      const w = o.plant.w, side = lg.L.ank[1] <= lg.R.ank[1] ? "L" : "R", l = lg[side];
+      const want = [o.plant.pt[0], (o.plant.y || 0) + S.ankle, o.plant.pt[1]];
+      const tgt = [l.ank[0] + (want[0] - l.ank[0]) * w, l.ank[1] + (want[1] - l.ank[1]) * w, l.ank[2] + (want[2] - l.ank[2]) * w];
+      const reachMax = S.thigh + S.shin - 0.02, hv = sub(tgt, l.hip), hd = len(hv);
+      if (hd > reachMax) {
+        const flat = nrm([hv[0], 0, hv[2]]), dd = mul(flat, hd - reachMax);
+        ["L", "R"].forEach((k) => { const q = lg[k]; q.hip = add(q.hip, dd); q.knee = add(q.knee, dd); q.ank = add(q.ank, dd); });
+        pelvis = add(pelvis, dd);
+      }
+      const s2 = ik2(l.hip, tgt, S.thigh, S.shin, add(F, mul(U, 0.2)));
+      l.knee = s2.mid; l.ank = s2.end;
+      lg.L.shoe = shoe(-1, p.lL, lg.L.ank); lg.R.shoe = shoe(1, p.rL, lg.R.ank);
+    }
     const chest = add(pelvis, mul(Uc, S.torso));
     const headUp = nrm(add(mul(Uc, 0.45), mul(U, 0.55)));     // 前かがみでも頭は起こす
     const head = add(chest, mul(headUp, S.neckToHead));
@@ -5469,6 +5487,25 @@ var V = (() => {
       }
       if (dir) res.slides[tr.id] = { t: te.t, dir: dir };
     }
+    // 走って塁を踏む瞬間（アストラ 2026-10-17 E）：走者の通り道が塁の中心から0.3m以内を通る所（いちばん近い時刻）。
+    //   滑り込む走者はスライディングが足を合わせるので外す。本塁は五角形の真ん中あたり・高さ0
+    res.plants = {};
+    acts.filter((a) => a.kind === "runner").forEach((a) => {
+      const kk = a.keys, t0 = kk[0][0], t1 = kk[kk.length - 1][0], sl = res.slides[a.id], list = [];
+      [["1B", W.DIM.baseH], ["2B", W.DIM.baseH], ["3B", W.DIM.baseH], ["home", 0]].forEach((bb) => {
+        const b = bb[0] === "home" ? [0.15, 0, 0.15] : W.BASE_OF[bb[0]];
+        let best = null;
+        for (let t = t0; t <= t1 + 1e-6; t += 0.01) {
+          const q = W.lerpKeys(kk, t), d = Math.hypot(q[0] - b[0], q[1] - b[2]);
+          if (d < 0.3 && (!best || d < best.d)) best = { t: t, d: d, q: q };
+          else if (best && d > 0.45) { list.push(best); best = null; }
+        }
+        if (best) list.push(best);
+        list.forEach((x) => { if (!x.pt) { x.pt = [b[0] + (x.q[0] - b[0]) * 0.5, b[2] + (x.q[1] - b[2]) * 0.5]; x.y = bb[1]; } });
+      });
+      const ok = list.filter((x) => !(sl && x.t > sl.t - 0.9));
+      if (ok.length) res.plants[a.id] = ok;
+    });
     actsCache[scene.id] = res;
     return res;
   };
@@ -5596,25 +5633,35 @@ var V = (() => {
   const STANDING_TAG_Y = { "U1-06": 0.78, "PU-05": 0.78 };
   // タッチの絵の当て所：走者がタッチの瞬間におる所（滑り込む走者は先頭の靴がそこ＝figure.js）。
   //   空タッチ（tag.at が走者から0.6m超）の場面だけは tag.at のまま＝「届いとらん」を見せる（Astra：触れたが読めん）
+  //   ★当て所は走者の体の表面（野手の側）。真ん中へ当てると、グラブが体の中へ入って見えた（とと 2026-10-17「体を手がすり抜ける」）。
+  //   立っとる走者は胴の太さ＋グラブ（0.16m）、滑る走者は足の太さ＋グラブ（0.09m）だけ野手の側へ
   const tagPoint = (scene, tg) => {
-    const r = autoActors(scene).filter((x) => x.id === tg.who)[0];
+    const acts = autoActors(scene);
+    const r = acts.filter((x) => x.id === tg.who)[0], f = acts.filter((x) => x.id === tg.by)[0];
     const rp = r ? W.lerpKeys(r.keys, tg.t) : null;
-    if (rp && Math.hypot(rp[0] - tg.at[0], rp[1] - tg.at[1]) <= 0.6) return [rp[0], TAG_H, rp[1]];
+    if (rp && Math.hypot(rp[0] - tg.at[0], rp[1] - tg.at[1]) <= 0.6) {
+      const fp = f ? W.lerpKeys(f.keys, tg.t) : null, off = STANDING_TAG_Y[scene.id] != null ? 0.16 : 0.09;
+      const dx = fp ? fp[0] - rp[0] : 0, dz = fp ? fp[1] - rp[1] : 0, l = Math.hypot(dx, dz);
+      return l > 1e-6 ? [rp[0] + dx / l * off, TAG_H, rp[1] + dz / l * off] : [rp[0], TAG_H, rp[1]];
+    }
     return [tg.at[0], TAG_H, tg.at[1]];
   };   // 調査02：グラブは塁の手前の地面に置き、走者に滑ってこさせる（前は0.30＝すねの高さ）
   const tagGlove = (C, T, R, ta, tt, t) => {
     const ss = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
     const mix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
     if (t <= tt) return tt > ta ? mix(C, T, ss((t - ta) / (tt - ta))) : T;
-    if (t <= tt + 0.25) return T;                     // 判定まで保持（02）
-    return mix(T, R, ss((t - tt - 0.25) / 0.35));     // すぐ上げて走者の足から離す
+    if (t <= tt + 0.10) return T;                     // 当てたまま（02）
+    const up = [T[0], Math.max(T[1] + 0.45, R[1] * 0.8), T[2]];
+    if (t <= tt + 0.25) return mix(T, up, ss((t - tt - 0.10) / 0.15));   // まず真上へ抜く（滑ってくる走者の脚の中にグラブが残っとった）
+    return mix(up, R, ss((t - tt - 0.25) / 0.35));
   };
   // 服の色。守備＝白いシャツと紺の帽子・ストッキング、走者・打者＝赤茶のシャツと帽子
   const styleOf = (a, faded) => {
     const atk = a.kind === "runner" || a.kind === "batter";
     const team = atk ? COL.runner : COL.navy;
-    return { shirt: atk ? COL.runner : COL.shirt, cap: team, sock: team, pants: COL.pants, skin: COL.skin,
-             shoe: COL.ink, ink: COL.ink, num: atk ? "" : (a.num ? String(a.num) : ""), numInk: COL.navy,
+    // 守備の上着は帽子と同じ紺（とと 2026-10-17「白いユニフォームの上を帽子の色と揃えて」）。背番号は白で抜く
+    return { shirt: atk ? COL.runner : COL.navy, cap: team, sock: team, pants: COL.pants, skin: COL.skin,
+             shoe: COL.ink, ink: COL.ink, num: atk ? "" : (a.num ? String(a.num) : ""), numInk: COL.shirt,
              opacity: faded ? 0.55 : 1 };
   };
 
@@ -5815,11 +5862,17 @@ var V = (() => {
         // 打者：頭を大きく下げん（Astra：通過で顔を下げ、見送り後も下向きやった）
         if (a.kind === "batter" && look) look = [look[0], Math.max(look[1], 0.95), look[2]];
       }
+      // 走って塁を踏む足：塁の上を通る時刻の前後0.09秒だけ、低い方の足を塁の上面へ
+      let plant = null;
+      (actsOf(scene).plants[a.id] || []).forEach((x) => {
+        const k = Math.max(0, 1 - Math.abs(t - x.t) / 0.09), w = k * k * (3 - 2 * k);
+        if (w > 0 && (!plant || w > plant.w)) plant = { pt: x.pt, y: x.y, w: w };
+      });
       // 打者：投球が来るまでは踏み込んだ形、通った0.1秒後から力を抜いて見送る（07）
       let take = 0;
       if (a.kind === "batter") { const k = ballKeys(scene); take = Math.max(0, Math.min(1, (t - k[k.length - 1][0] - 0.1) / 0.3)); }
       const sk = FIG.build({ at: xz, face: face, run: pose === "ready" ? run : 0, steps: steps, flight: flight,
-                             low: low, pose: pose, lefty: lefty, glove: gp, high: high, two: two, look: look, take: take, fit: fit,
+                             low: low, pose: pose, lefty: lefty, glove: gp, high: high, two: two, look: look, take: take, fit: fit, plant: plant,
                              act: act ? { kind: act.kind, v: act.v, u: act.u, w: act.w } : null,
                              hand: null, handW: 0 });
       if (poss && poss.inHand) inHand = sk.hand;
@@ -5839,6 +5892,7 @@ var V = (() => {
               lefty: lefty, glove: gp, look: look, t: t, team: (a.kind === "runner" || a.kind === "batter") ? "atk" : "def",
               num: st.num, faded: isPitchCatcher, bat: sk.bat ? [sk.bat.a, sk.bat.b] : null,
               act: act ? { kind: act.kind, w: act.w } : null, skel: sk,
+              plant: plant ? { pt: [plant.pt[0], plant.y, plant.pt[1]], w: plant.w } : null,
               // 3Dの選手が骨格（figure.js の姿勢の表）にどれだけ合わせるか。走っとる時だけ素材の動き（全力疾走など）
               follow: Math.max(act ? act.w : 0, 1 - Math.min(1, run * 1.25), Math.min(1, low)) }
       };
@@ -6052,7 +6106,7 @@ var R3 = (() => {
   const spare = { def: [], atk: [] };   // 先に作っておいた人（初めて出る瞬間に作ると一瞬カクッとなった）
   let ballMesh = null, gloveGeo = null, gloveMat = null, heldMat = null;
   const gloves = [];
-  const TEAM = { def: { Shirt: 0xf1efe9, Cap: 0x1e3044, Sock: 0x1e3044 }, atk: { Shirt: 0x8e2b21, Cap: 0x8e2b21, Sock: 0x7a241c } };
+  const TEAM = { def: { Shirt: 0x1e3044, Cap: 0x1e3044, Sock: 0x1e3044 }, atk: { Shirt: 0x8e2b21, Cap: 0x8e2b21, Sock: 0x7a241c } };
 
   // 世界 → three
   const v3 = (p) => new THREE.Vector3(p[0], p[1], -p[2]);
@@ -6189,6 +6243,21 @@ var R3 = (() => {
 
   const frac = (x) => x - Math.floor(x);
   const legFix = [];
+  const plantFoot = (k, pl, face) => {
+    const B = k.bones;
+    if (!B.foot_l || !B.foot_r) return;
+    const s = wp(B.foot_l).y <= wp(B.foot_r).y ? "l" : "r";
+    const th = B["thigh_" + s], ca = B["calf_" + s], ft = B["foot_" + s];
+    if (!th || !ca) return;
+    const tgt = v3([pl.pt[0], pl.pt[1] + 0.075, pl.pt[2]]), cur = wp(ft), goal = cur.clone().lerp(tgt, pl.w);
+    const hip = wp(th), L = hip.distanceTo(wp(ca)) + wp(ca).distanceTo(cur) - 0.02, d = goal.clone().sub(hip);
+    if (d.length() > L) {
+      const flat = new THREE.Vector3(d.x, 0, d.z).normalize().multiplyScalar(d.length() - L);
+      k.root.position.add(flat); k.root.updateMatrixWorld(true);
+    }
+    const fwd = v3([face[0], 0, face[1]]).sub(v3([0, 0, 0])).normalize();
+    reach(th, ca, ft, goal, fwd.add(new THREE.Vector3(0, 0.2, 0)));
+  };
   const footToSkel = (k, sk, w, lead) => {
     const B = k.bones;
     const one = (s) => {
@@ -6281,6 +6350,8 @@ var R3 = (() => {
     //   膝は骨格の膝の側へ曲げる。滑っとる時は、先頭の足が届かん分だけ体ごと寄せる（判定に使う足の位置を絵で守る）
     legFix.length = 0;
     if (p.skel && p.follow > 0.3) footToSkel(k, p.skel, p.follow, p.act && p.act.kind === "slide" ? "l" : null);
+    // 走って塁を踏む足（素材の走る動きのまま、その瞬間に低い方の足だけを塁の上面へ届かせる）
+    if (p.plant && p.plant.w > 0 && !(p.follow > 0.3)) plantFoot(k, p.plant, p.face);
     // グラブの手：右投げ＝左手。目標がある時は2本の骨で届かせる（肘は外・下へ）
     const L = p.lefty ? "r" : "l";
     const up = B["upperarm_" + L], lo = B["lowerarm_" + L], hand = B["hand_" + L];
@@ -7004,9 +7075,9 @@ var SCENES = [
     ask:   { easy: "深い所への内野ゴロ。打った人が一塁へ走る", pro: "深いゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.30, 23.05, -0.30], [4.2, 27.0, -0.6]] },
+      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.30, 23.00, -0.12], [4.2, 27.0, -0.4]] },
       { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.0, 19.0], [1.50, 11.0, 22.0], [1.9, 11.8, 21.5]] },
-      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.6, 22.95, 0.16]] },
+      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.6, 22.85, 0.24]] },   // 踏み足は塁の内野側の縁（走者はファウル側の半分を踏む＝ぶつからん）
       { id: "F1", kind: "fielder", num: 1, keys: [[0, 11.31, 11.31], [2.2, 15.0, 6.5]] }
     ],
     ball: { keys: [[0, 0, 0.9, 0], [1.5, 11, 0.28, 22], [1.9, 11.4, 1.2, 21.6], [3.65, 22.69, 1.05, 0.64]] },
@@ -7029,7 +7100,7 @@ var SCENES = [
     cam: { pos: [22.0, 1.5, -2.6], at: [12.0, 0.15, -0.6] },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [2.6, 14.0, -0.3]] },
-      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [2.0, 13.5, -0.15]] },
+      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [2.0, 12.3, -1.25]] },   // 球の外側（ファウル側）から拾いに来る（前は打者走者の通り道に立ち、走者が体を通り抜けとった）
       { id: "F1", kind: "fielder", num: 1, keys: [[0, 11.31, 11.31], [2.0, 12.0, 4.0]] }
     ],
     ball: { keys: [[0, 0, 0.9, 0], [0.6, 6.0, 0.06, -0.25], [1.4, 10.0, 0.03, -0.6], [2.0, 12.0, 0, -0.8], [2.6, 12.0, 0, -0.8]] },
@@ -7049,7 +7120,7 @@ var SCENES = [
     ask:   { easy: "内野ゴロ。打った人が一塁へ走る", pro: "内野ゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.82, 23.05, -0.30], [4.6, 27.0, -0.6]] },
+      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.82, 23.00, -0.08], [4.6, 27.0, -0.35]] },
       { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.5, 19.0], [1.10, 12.8, 18.0], [1.5, 13.4, 17.8]] },
       { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.5, 22.95, 0.16]] },
       { id: "F1", kind: "fielder", num: 1, keys: [[0, 11.31, 11.31], [2.0, 14.0, 7.0]] }
@@ -7073,7 +7144,7 @@ var SCENES = [
     ask:   { easy: "内野ゴロ。打った人が一塁へ走る", pro: "内野ゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.45, 23.05, -0.30], [4.3, 27.0, -0.6]] },
+      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.45, 23.00, -0.08], [4.3, 27.0, -0.35]] },
       { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [1.20, 18.2, 11.5], [1.6, 18.8, 11.2]] },
       { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.6, 22.9, 0.2], [3.30, 22.2, 0.95]] },
       { id: "F1", kind: "fielder", num: 1, keys: [[0, 11.31, 11.31], [2.0, 14.0, 7.0]] }
@@ -7099,12 +7170,12 @@ var SCENES = [
     cam: { pos: [26.5, 1.5, -3.0], at: [25.0, 0.6, 1.0] },     // 駆け抜けた先まで見える位置
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.30, 23.05, -0.08], [3.70, 25.40, -0.08], [3.95, 26.25, 0.55], [4.15, 26.15, 1.35], [4.60, 25.2, 1.6], [5.00, 23.05, 0.10]] },   // 塁を越えてから向きを変える
-      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.6, 22.95, 0.16], [3.30, 22.95, 0.16], [3.80, 23.5, 0.5], [4.30, 24.5, 1.0], [4.60, 24.9, 1.2], [5.60, 24.9, 1.2]] },   // 塁の近くで待ち、走者が二塁へ向かいかけたら寄って横から触る（並んで走らん）
+      { id: "F3", kind: "fielder", num: 3, keys: [[0, 20.2, 1.8], [1.6, 22.95, 0.16], [3.30, 22.95, 0.16], [3.80, 23.5, 0.5], [4.30, 24.4, 1.55], [4.60, 24.95, 2.1], [5.60, 24.95, 2.1]] },   // 二塁側から寄って触る（塁側に立つと、タッチの後に一塁へ戻る走者が体を通り抜けた）   // 塁の近くで待ち、走者が二塁へ向かいかけたら寄って横から触る（並んで走らん）
       { id: "F1", kind: "fielder", num: 1, keys: [[0, 11.31, 11.31], [2.0, 14.0, 7.0]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.2, 12.0, 0.3, 6.0], [1.5, 12.4, 1.2, 5.6], [3.10, 22.9, 1.05, 0.4], [3.30, 22.95, 1.0, 0.35], [3.80, 23.5, 0.95, 0.6], [4.30, 24.5, 0.9, 1.05], [4.60, 25.4, 0.5, 1.5]] },   // 捕った後はグラブと一緒に動く（前は宙を流れとった）
+    ball: { keys: [[0, 0, 0.9, 0], [1.2, 12.0, 0.3, 6.0], [1.5, 12.4, 1.2, 5.6], [3.10, 22.9, 1.05, 0.4], [3.30, 22.95, 1.0, 0.35], [3.80, 23.5, 0.95, 0.6], [4.30, 24.3, 0.9, 1.5], [4.60, 25.0, 0.8, 1.95]] },   // 捕った後はグラブと一緒に動く（前は宙を流れとった）
     events: {
-      tag: { t: 4.60, by: "F3", at: [25.3, 1.5], who: "B" },
+      tag: { t: 4.60, by: "F3", at: [25.0, 1.95], who: "B" },
       touch: { t: 5.00, who: "B", base: "1B" },
       overrun: { turned: "fair" }
     },
@@ -7143,7 +7214,7 @@ var SCENES = [
     ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.60, 23.05, 20.90], [2.90, 23.05, 22.10], [3.30, 23.05, 22.81], [3.90, 23.05, 22.81]] },   // 塁の手前の縁で止まる
+      { id: "R1", kind: "runner",  keys: [[0, 23.0, 2.5], [2.60, 23.05, 20.90], [2.90, 23.05, 22.10], [3.30, 23.05, 22.81], [3.90, 23.05, 22.81]] },   // 塁の手前の縁で止まる
       { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [2.60, 22.55, 22.30], [3.90, 22.55, 22.30]] },   // 走路の内野側の横で構える（走路をふさがん）
       { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.0, 19.0], [2.6, 20.5, 22.0]] },
       { id: "F2", kind: "catcher", num: 2, keys: [[0, -1.0, -1.0]] }
@@ -7166,7 +7237,7 @@ var SCENES = [
     ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.80, 23.0, 22.9], [3.4, 23.0, 23.2]] },
+      { id: "R1", kind: "runner",  keys: [[0, 23.0, 2.5], [2.80, 23.0, 22.9], [3.4, 23.0, 23.2]] },
       { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [3.00, 22.9, 23.3]] },
       { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.0, 19.0], [2.8, 20.0, 22.4]] },
       { id: "F2", kind: "catcher", num: 2, keys: [[0, -1.0, -1.0]] }
@@ -7189,15 +7260,15 @@ var SCENES = [
     ask:   { easy: "内野ゴロ。ゲッツー（1回で2人アウト）をねらって二塁へ投げる", pro: "内野ゴロ・併殺狙いの二塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
-      { id: "R1", kind: "runner",  visualSlide: true, keys: [[0, 23.0, 0.3], [2.24, 23.0, 20.90], [2.80, 23.0, 22.81], [3.4, 23.0, 22.81]] },   // 一塁側の縁へ足から滑る（駆け抜けん）
-      { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [1.10, 19.5, 12.5], [1.5, 20.0, 12.8]] },
-      { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.0, 19.0], [2.20, 23.0, 22.85], [2.43, 23.0, 22.85], [2.65, 22.6, 23.1], [2.80, 22.3, 23.3], [3.0, 22.1, 23.4]] },   // 捕ったら塁の後ろ（三塁側）へ抜けて、滑ってくる走者を避ける（右へ外すと二塁審の目線で走者の前に重なった）
+      { id: "R1", kind: "runner",  visualSlide: true, keys: [[0, 23.0, 3.0], [2.74, 23.0, 20.90], [3.30, 23.0, 22.81], [3.9, 23.0, 22.81]] },   // リードから走る（前は秒速9mやった）   // 一塁側の縁へ足から滑る（駆け抜けん）
+      { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [1.60, 19.5, 12.5], [2.0, 20.0, 12.8]] },
+      { id: "F6", kind: "fielder", num: 6, keys: [[0, 13.0, 19.0], [2.70, 23.0, 22.85], [2.93, 23.0, 22.85], [3.15, 22.6, 23.1], [3.30, 22.3, 23.3], [3.5, 22.1, 23.4]] },   // 捕ったら塁の後ろ（三塁側）へ抜けて、滑ってくる走者を避ける（右へ外すと二塁審の目線で走者の前に重なった）
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.7, 23.0, -0.3]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.1, 19.5, 0.3, 12.5], [1.5, 19.9, 1.2, 13.2], [2.4, 22.83, 1, 22.33]] },
+    ball: { keys: [[0, 0, 0.9, 0], [1.6, 19.5, 0.3, 12.5], [2.0, 19.9, 1.2, 13.2], [2.9, 22.83, 1, 22.33]] },
     events: {
-      catch: { t: 2.40, by: "F4→F6" },
-      touch: { t: 2.80, who: "R1", base: "2B" }
+      catch: { t: 2.90, by: "F4→F6" },
+      touch: { t: 3.30, who: "R1", base: "2B" }
     },
     watch: "フォースなのでタッチは要らない。ベースを踏んだ足と、グラブに入る音を見る",
     why:   "ボールが0.4秒早い。二塁はフォースなので、触塁と捕球の順番だけで決まる"
@@ -7235,7 +7306,7 @@ var SCENES = [
     ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.90, 23.0, 22.2], [3.10, 23.0, 22.9]] },
+      { id: "R1", kind: "runner",  keys: [[0, 23.0, 2.5], [2.90, 23.0, 22.2], [3.10, 23.0, 22.9]] },
       { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [2.80, 22.4, 22.0]] },
       { id: "F2", kind: "catcher", num: 2, keys: [[0, -1.0, -1.0]] }
     ],
@@ -7281,16 +7352,18 @@ var SCENES = [
     title: "一塁走者が三塁へ・タッチ",
     ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
+    // ★左翼手が球を拾う所から始める（2026-10-17）：打った瞬間から始めると、一塁走者が一塁から三塁まで約3秒＝
+    //   秒速12〜18mで走っとった（子どもは速くて秒速7m前後）。今は走者がもう二塁を回って三塁へ向かう所から
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.60, 2.10, 22.50], [3.90, 0.75, 22.70], [4.30, 0.19, 22.90], [4.90, 0.19, 22.90]] },   // 三塁の二塁側の縁へ
-      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [3.60, 0.45, 22.30], [4.90, 0.45, 22.30]] },   // 走者の来る線の内野側の横で受ける（外野側に立つと、三塁審の目線で走者が野手の体に隠れた）
-      { id: "F7", kind: "fielder", num: 7, keys: [[0, 6.0, 32.0], [2.4, 7.5, 30.5]] },
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.6, 23.0, -0.3]] }
+      { id: "R1", kind: "runner",  keys: [[0, 18.5, 23.1], [2.40, 2.10, 22.50], [2.70, 0.75, 22.70], [3.10, 0.19, 22.90], [3.70, 0.19, 22.90]] },   // 三塁の二塁側の縁へ
+      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [1.80, 0.45, 22.30], [3.70, 0.45, 22.30]] },   // 走者の来る線の内野側の横で受ける（外野側に立つと、三塁審の目線で走者が野手の体に隠れた）
+      { id: "F7", kind: "fielder", num: 7, keys: [[0, 13.0, 39.5], [1.4, 10.6, 36.8], [2.0, 10.3, 36.5]] },
+      { id: "B",  kind: "runner",  keys: [[0, 12.3, -0.32], [1.6, 23.0, -0.3]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.2, 8.0, 4.0, 30.0], [2.45, 7.4, 1.0, 30.4], [3.85, 0.5, 0.45, 22.8]] },
+    ball: { keys: [[0, 8.0, 0.05, 32.0], [1.4, 10.3, 1.0, 36.5], [2.65, 0.5, 0.45, 22.6]] },
     events: {
-      tag: { t: 3.90, by: "F5", at: [0.75, 22.7], who: "R1" },
-      touch: { t: 4.30, who: "R1", base: "3B" }
+      tag: { t: 2.70, by: "F5", at: [0.75, 22.7], who: "R1" },
+      touch: { t: 3.10, who: "R1", base: "3B" }
     },
     watch: "三塁の後ろから、グラブと走者の体が重ならない角度に入る",
     why:   "タッチが0.4秒早い。中継が良く、走者が滑り込む前にグラブが届いている"
@@ -7304,19 +7377,21 @@ var SCENES = [
     title: "一塁走者が三塁へ・足が先",
     ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
+    // ★左翼手が球を拾う所から始める（2026-10-17）：打った瞬間から始めると、一塁走者が一塁から三塁まで約3秒＝
+    //   秒速12〜18mで走っとった（子どもは速くて秒速7m前後）。今は走者がもう二塁を回って三塁へ向かう所から
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.30, 0.15, 22.85], [3.9, 0.1, 22.6]] },
-      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [3.20, 0.5, 22.5]] },
-      { id: "F7", kind: "fielder", num: 7, keys: [[0, 6.0, 32.0], [2.2, 7.0, 30.0]] },
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.6, 23.0, -0.3]] }
+      { id: "R1", kind: "runner",  keys: [[0, 18.5, 23.1], [2.40, 2.10, 22.50], [2.70, 0.75, 22.70], [3.10, 0.19, 22.90], [4.10, 0.19, 22.90]] },
+      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [2.60, 0.45, 22.30], [4.10, 0.45, 22.30]] },
+      { id: "F7", kind: "fielder", num: 7, keys: [[0, 12.5, 37.5], [2.05, 10.6, 35.6], [2.6, 10.3, 35.3]] },
+      { id: "B",  kind: "runner",  keys: [[0, 12.3, -0.32], [1.6, 23.0, -0.3]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.2, 8.0, 4.0, 30.0], [2.25, 7.0, 1.0, 30.0], [3.65, 0.6, 0.45, 22.6]] },
+    ball: { keys: [[0, 8.0, 0.05, 31.5], [2.05, 10.3, 1.0, 35.3], [3.30, 0.5, 0.45, 22.55]] },
     events: {
-      tag: { t: 3.70, by: "F5", at: [0.2, 22.8], who: "R1" },
-      touch: { t: 3.30, who: "R1", base: "3B" }
+      tag: { t: 3.50, by: "F5", at: [0.2, 22.8], who: "R1" },
+      touch: { t: 3.10, who: "R1", base: "3B" }
     },
     watch: "足が先か、グラブが先か。体を止めて、低い位置から見る",
-    why:   "走者の足が0.05秒早い。ほとんど同時だが、足が先に塁に触れている"
+    why:   "走者の足が0.4秒早い。足が先に塁に触れてから、タッチが来ている"
   },
 
   // ============================================================
@@ -7350,19 +7425,21 @@ var SCENES = [
     title: "スライディングでタッチをかわす",
     ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
+    // ★左翼手が球を拾う所から始める（2026-10-17）：打った瞬間から始めると、一塁走者が一塁から三塁まで約3秒＝
+    //   秒速12〜18mで走っとった（子どもは速くて秒速7m前後）。今は走者がもう二塁を回って三塁へ向かう所から
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.10, 0.9, 22.3], [3.30, 0.15, 22.85]] },
-      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [3.00, 0.6, 21.5]] },
-      { id: "F7", kind: "fielder", num: 7, keys: [[0, 6.0, 32.0], [2.2, 7.0, 30.0]] },
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.6, 23.0, -0.3]] }
+      { id: "R1", kind: "runner",  keys: [[0, 18.5, 23.1], [2.30, 3.2, 22.7], [2.90, 1.0, 22.95], [3.10, 0.19, 22.95], [3.70, 0.19, 22.95]] },   // 外野側へ回り込んで滑る
+      { id: "F5", kind: "fielder", num: 5, keys: [[0, 3.0, 20.0], [1.80, 0.6, 21.9], [3.70, 0.6, 21.9]] },
+      { id: "F7", kind: "fielder", num: 7, keys: [[0, 13.5, 40.0], [1.6, 10.8, 37.3], [2.2, 10.5, 37.0]] },
+      { id: "B",  kind: "runner",  keys: [[0, 12.3, -0.32], [1.6, 23.0, -0.3]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.2, 8.0, 4.0, 30.0], [2.25, 7.0, 1.0, 30.0], [2.95, 0.7, 0.8, 21.6]] },
+    ball: { keys: [[0, 8.0, 0.05, 32.0], [1.6, 10.5, 1.0, 37.0], [2.85, 0.7, 0.8, 21.6]] },
     events: {
-      tag: { t: 3.10, by: "F5", at: [0.75, 21.1], who: "R1" },
-      touch: { t: 3.30, who: "R1", base: "3B" }
+      tag: { t: 2.90, by: "F5", at: [0.75, 21.4], who: "R1" },
+      touch: { t: 3.10, who: "R1", base: "3B" }
     },
     watch: "ボールが早く着いても、グラブが体に触れたかを最後まで見る",
-    why:   "走者が体をひねってかわし、グラブが70cm離れている。触れていないのでセーフ"
+    why:   "走者が外野側へ回り込んで滑り、グラブが1.5m離れている。触れていないのでセーフ"
   },
 
   // ============================================================
@@ -7399,16 +7476,18 @@ var SCENES = [
     title: "本塁のクロスプレー・送球が遅れる",
     ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 0 },
+    // ★外野手が球を拾う所から始める（2026-10-17）：打った瞬間から始めると、二塁走者が三塁を回らず
+    //   マウンドの横を斜めに突っ切っとった。今は走者がもう三塁を回って三塁線を下りてくる所から
     actors: [
-      { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.30, 0.12, 0.12], [4.90, -0.6, -0.6]] },
-      { id: "F2", kind: "catcher", num: 2, keys: [[0, -1.0, -1.0], [4.50, -0.5, -0.6]] },
-      { id: "F7", kind: "fielder", num: 7, keys: [[0, 6.0, 32.0], [3.0, 5.5, 30.5]] },
-      { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.6, 23.0, -0.3]] }
+      { id: "R2", kind: "runner",  keys: [[0, 0.1, 14.4], [1.50, 0.1, 4.4], [1.90, 0.1, 1.5], [2.30, 0.06, 0.22], [3.0, 0.06, 0.22]] },
+      { id: "F2", kind: "catcher", num: 2, keys: [[0, 0.2, -0.9], [1.30, 0.6, 0.9], [2.15, 0.6, 0.9], [2.35, 0.75, -0.1], [2.55, 0.05, -0.4], [3.0, 0.05, -0.4]] },   // 逸れた送球を本塁の後ろへ追う（滑る走者の上は通らん）
+      { id: "F7", kind: "fielder", num: 7, keys: [[0, 5.0, 32.5], [0.45, 5.4, 30.4], [1.2, 5.2, 29.0]] },
+      { id: "B",  kind: "runner",  keys: [[0, 15.2, -0.32], [1.2, 23.0, -0.3]] }
     ],
-    ball: { keys: [[0, 0, 0.9, 0], [1.3, 4.0, 6.0, 28.0], [3.05, 5.5, 1.2, 30.4], [4.60, -0.4, 0.9, -0.5]] },
+    ball: { keys: [[0, 4.4, 0.05, 24.0], [0.25, 5.0, 0.9, 27.5], [0.45, 5.5, 1.2, 29.9], [2.60, 0.0, 0.9, -0.45]] },
     events: {
-      tag: { t: 4.70, by: "F2", at: [-0.4, -0.3], who: "R2" },
-      touch: { t: 4.30, who: "R2", base: "home" }
+      tag: { t: 2.70, by: "F2", at: [0.05, 0.1], who: "R2" },
+      touch: { t: 2.30, who: "R2", base: "home" }
     },
     watch: "走者の足と本塁だけを見る。捕手の動きに引っぱられない",
     why:   "走者の足が0.4秒早い。送球が逸れて、タッチが本塁の後ろになっている"
@@ -7476,7 +7555,7 @@ var SCENES = [
     //   今は走者がもう三塁を回って三塁線を下りてくる所から。本塁審が見るのはここから先だけ
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, -0.6, 14.6], [2.10, -0.6, 0.9], [2.40, -0.65, -0.6], [2.70, -0.7, -1.6], [3.3, -0.8, -2.6]] },   // 三塁線の外を走り、本塁の横を踏まずに抜ける
-      { id: "F2", kind: "catcher", num: 2, keys: [[0, 0.2, -0.9], [1.30, 0.35, 0.9], [2.15, 0.35, 0.9], [2.55, -0.15, -0.95], [3.3, -0.15, -0.95]] },   // 捕ってから追いかけて、走者の横から触る
+      { id: "F2", kind: "catcher", num: 2, keys: [[0, 0.2, -0.9], [1.30, 0.35, 0.9], [2.15, 0.35, 0.9], [2.55, -0.12, -0.95], [3.3, -0.12, -0.95]] },   // 捕ってから追いかけて、走者の横から触る
       { id: "F7", kind: "fielder", num: 7, keys: [[0, 5.0, 32.5], [0.45, 5.4, 30.4], [1.2, 5.2, 29.0]] },
       { id: "B",  kind: "runner",  keys: [[0, 15.2, -0.32], [1.2, 23.0, -0.3]] }
     ],
