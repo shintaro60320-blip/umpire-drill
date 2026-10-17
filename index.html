@@ -78,8 +78,9 @@ button[disabled] { opacity: .45; cursor: default; }
 .scene { width: 100%; height: auto; display: block; }
 .stage { position: relative; }
 /* 右上の塁の図（とと 2026-10-17「塁のどこに入っとるかが見えるように、画面の右上に」） */
-.bases { position: absolute; top: 8px; right: 8px; width: 23%; max-width: 104px; min-width: 70px; pointer-events: none;
-  background: rgba(15,46,28,.72); border-radius: 10px; padding: 4px 4px 2px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+/* ★小さく薄く（とと 2026-10-17「画面上の塁の図が邪魔なので、もう少し小さく薄く」）：幅23%→14%・背景の濃さ.72→.32・全体を少し透かす */
+.bases { position: absolute; top: 6px; right: 6px; width: 14%; max-width: 64px; min-width: 46px; pointer-events: none;
+  background: rgba(15,46,28,.32); border-radius: 8px; padding: 3px 3px 1px; opacity: .85; }
 .bases svg { display: block; width: 100%; height: auto; }
 .sit { background: linear-gradient(180deg, #1f5c39, #17482c); color: #fff; border-radius: var(--r-btn);
   padding: 10px var(--s3); font-weight: 800; letter-spacing: .03em; margin-bottom: var(--s2);
