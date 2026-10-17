@@ -5468,6 +5468,22 @@ var V = (() => {
     actsCache[scene.id] = res;
     return res;
   };
+  // 捕った後の形の種類：force＝塁の上で伸びて捕る／show＝すれすれの捕球を見せる／relay＝タッチアップのフライ（走者の向かう塁へ）
+  const catchTypeOf = (scene, id) => {
+    const AC = actsOf(scene);
+    if (AC.stretch && AC.stretch.by === id) return "force";
+    if (scene.q === "catch") return "show";
+    if (scene.q === "tagup") return "relay";
+    return "normal";
+  };
+  // タッチアップで走者が向かう塁（走者の最後の位置）
+  const relayTarget = (scene) => {
+    const r = autoActors(scene).filter((x) => x.kind === "runner")[0];
+    if (!r) return null;
+    const k = r.keys[r.keys.length - 1];
+    return [k[1], k[2]];
+  };
+
   // ある人のこの時刻の動作。投げる＝表の時刻を「持ってから投げるまで」の長さに合わせて縮める
   const actOf = (scene, a, t) => {
     const AC = actsOf(scene), cl = (v) => Math.max(0, Math.min(1, v));
@@ -5486,7 +5502,7 @@ var V = (() => {
     const sl = AC.slides[a.id];
     if (sl && t >= sl.t - 0.56) return { kind: "slide", u: t - sl.t, w: cl((t - sl.t + 0.56) / 0.08), sl: sl };
     const st = AC.stretch;
-    if (st && st.by === a.id && t >= st.t - 1.2 && st.amt > 0) return { kind: "stretch", u: t - st.t, w: st.amt * cl((t - st.t + 1.2) / 0.2) * cl(1 - (t - st.t - 0.6) / 0.3) };
+    if (st && st.by === a.id && t >= st.t - 1.2 && st.amt > 0) return { kind: "stretch", u: t - st.t, w: st.amt * cl((t - st.t + 1.2) / 0.2) * cl(1 - (t - st.t - 0.45) / 0.4) };
     return null;
   };
 
@@ -5673,7 +5689,12 @@ var V = (() => {
         const d = [act.th.to[0] - xz[0], act.th.to[1] - xz[1]], l = Math.hypot(d[0], d[1]) || 1;
         face = [face[0] + (d[0] / l - face[0]) * act.w, face[1] + (d[1] / l - face[1]) * act.w];
       } else if (act && act.kind === "slide") face = act.sl.dir;
-      else if (act && act.kind === "stretch") {
+      else if (hold && hold.by === a.id && t > hold.t + 0.15 && catchTypeOf(scene, a.id) === "relay" && relayTarget(scene)) {
+        // タッチアップのフライ：捕ったら走者の向かう塁へ体を向けて、投げる準備
+        const rt = relayTarget(scene), d = [rt[0] - xz[0], rt[1] - xz[1]], l = Math.hypot(d[0], d[1]) || 1;
+        const w = Math.min(1, (t - hold.t - 0.15) / 0.3);
+        face = [face[0] + (d[0] / l - face[0]) * w, face[1] + (d[1] / l - face[1]) * w];
+      } else if (act && act.kind === "stretch") {
         // 送球が飛んでくる方へ正対して伸びる（球が目の前に来ると「最後に走った向き」になり、反対へ伸びとった）
         const from = W.lerpBall(ballKeys(scene), actsOf(scene).stretch.t - 0.35);
         const d = [from[0] - xz[0], from[2] - xz[1]], l = Math.hypot(d[0], d[1]);
@@ -5708,11 +5729,21 @@ var V = (() => {
           gp = tagGlove(C0, tp, rest, hold.t, tg.t, t);
           holding = true; two = 1;
         } else if (hold && hold.by === a.id && t >= hold.t) {
-          // 持っとる。捕った直後の0.12秒は捕球点で止めて「入った所」を見せ、0.25秒で胸へ集める（Astra：前は0.3秒止めて0.5秒）
+          // 持っとる。捕った後の形は場面で変える（とと 2026-10-17「捕球後の形をそれぞれのシーンに合わせて。ファースト伸びて取る」）
+          //   force＝塁の上で伸びて捕った：伸びたままグラブを0.35秒残してから胸へ（前はグラブだけ先に胸へ戻って変な形）
+          //   show ＝すれすれの捕球：体を起こしてグラブを顔の高さへ上げ、捕ったことを見せる
+          //   それ以外：0.12秒止めて0.25秒で胸へ（タッチアップのフライは、ここから走者の向かう塁へ体を向ける＝下の向き）
           const at0 = W.lerpBall(ballKeys(scene), hold.t);
-          const k = Math.min(1, Math.max(0, (t - hold.t - 0.12) / 0.25));
-          fitW = 1 - k;
-          gp = [at0[0] + (rest[0] - at0[0]) * k, at0[1] + (rest[1] - at0[1]) * k, at0[2] + (rest[2] - at0[2]) * k];
+          const ct = catchTypeOf(scene, a.id);
+          let goal = rest, k;
+          if (ct === "force") k = Math.min(1, Math.max(0, (t - hold.t - 0.35) / 0.3));
+          else if (ct === "show") {
+            goal = [xz[0] + dx / len * 0.35, 1.15, xz[1] + dz / len * 0.35];   // 顔の高さ（1.35やと腕が真上へ伸び切った）
+            k = Math.min(1, Math.max(0, (t - hold.t - 0.12) / 0.35));
+          } else k = Math.min(1, Math.max(0, (t - hold.t - 0.12) / 0.25));
+          fitW = ct === "show" ? 1 : 1 - k;
+          const kk = k * k * (3 - 2 * k);
+          gp = [at0[0] + (goal[0] - at0[0]) * kk, at0[1] + (goal[1] - at0[1]) * kk, at0[2] + (goal[2] - at0[2]) * kk];
           holding = true; two = 1;
         } else if (hold && hold.by === a.id && t >= hold.t - 0.55) {
           // ★フライ：捕る本人は、捕る所へグラブを構えて待つ（球を追いかけて上下させん）
@@ -5762,7 +5793,13 @@ var V = (() => {
       let look = null;
       if (a.kind !== "runner") {
         if (act && act.kind === "throw") look = [act.th.to[0], 1.0, act.th.to[1]];
-        else if (holding && gp) look = gp;                                  // 捕ったらグラブを見る（Astra：捕る瞬間に顔が下を向いとった）
+        else if (holding && gp && hold && t < hold.t + 0.15) look = gp;      // 捕った瞬間はグラブを見る
+        else if (holding && gp && hold) {
+          const ct = catchTypeOf(scene, a.id), rt = relayTarget(scene);
+          if (ct === "relay" && rt) look = [rt[0], 1.1, rt[1]];               // タッチアップ：走者の向かう塁を見る
+          else if (ct === "show") look = gp;                                   // 見せる：上げたグラブを見る
+          else look = [xz[0] + face[0] * 5, 1.2, xz[1] + face[1] * 5];       // それ以外：前を見る（胸のグラブを覗き込まん）
+        }
         else if (b && !(hold && hold.by === a.id && t >= hold.t)) look = b;
         // 打者：頭を大きく下げん（Astra：通過で顔を下げ、見送り後も下向きやった）
         if (a.kind === "batter" && look) look = [look[0], Math.max(look[1], 0.95), look[2]];
@@ -6197,15 +6234,8 @@ var R3 = (() => {
     k.mixer.update(0);
     k.root.updateMatrixWorld(true);
     const B = k.bones;
-    // 低い球・タッチ：背中を前へ倒す（しゃがむ動きだけだと上体が立ったまま）
-    // 捕手は逆に起こす（しゃがむ動きは上体が前へ倒れとって、おじぎに見えた）
-    const lean = p.pose === "catcher" ? -0.45 : Math.min(1, p.low || 0) * 0.30 + Math.max(0, (p.low || 0) - 1) * 0.15;
-    if (lean > 0 && B.spine_01) {
-      const right = new THREE.Vector3(-Math.cos(ang), 0, Math.sin(ang));   // 本人の右（three の座標）
-      turnBone(B.spine_01, _q.setFromAxisAngle(right, -lean));
-      // 頭は起こしてボールを見る（倒したままやと、体を折りたたんだように見えた）
-      if (B.neck_01 && lean > 0) turnBone(B.neck_01, _q.setFromAxisAngle(right, lean * 1.1));
-    }
+    // ★前はここで背中と首を曲げとったが、構えは骨格（figure.js）に合わせるようになったので外した。
+    //   背中は骨格が上書きするのに首の曲げだけが残って、フライを捕った後などに頭が深く折れて見えた（とと 2026-10-17）
     // 構え・捕る・投げる・滑る・捕手・打者は骨格の姿勢に合わせる（調べた野球の形を表に入れれば3Dにも出る）
     if (p.skel && p.follow > 0) followSkel(k, p.skel, p.follow);
     // グラブの手：右投げ＝左手。目標がある時は2本の骨で届かせる（肘は外・下へ）
@@ -6236,6 +6266,12 @@ var R3 = (() => {
       const aim = (bone, part) => {
         const hp = wp(B.Head), cur = k.headLocal.clone().applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()));
         const want = v3(p.look).sub(hp).normalize();
+        // 見上げは50°・見下ろしは25°まで（グラブを胸に抱えた時に、首が折れたように下を向いとった）
+        const el = Math.asin(Math.max(-1, Math.min(1, want.y))), lo = -25 * Math.PI / 180, hi = 50 * Math.PI / 180;
+        if (el < lo || el > hi) {
+          const e2 = Math.max(lo, Math.min(hi, el)), hz = new THREE.Vector3(want.x, 0, want.z).normalize();
+          want.copy(hz.multiplyScalar(Math.cos(e2))).setY(Math.sin(e2));
+        }
         const ang = cur.angleTo(want);
         if (ang < 1e-3) return;
         const lim = Math.min(1, (70 * Math.PI / 180) / ang);
