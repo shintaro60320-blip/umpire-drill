@@ -236,6 +236,7 @@ button[disabled] { opacity: .45; cursor: default; }
   <div class="ask" id="qAsk"></div>
   <div class="stage"><div id="qField"></div><div class="bases" id="qBases"></div></div>
   <div class="playing" id="qState"></div>
+  <button class="bigbtn" id="btnQReplay" style="width:100%;justify-content:center;margin-bottom:12px;display:none">▶ もう一度見る</button>
   <div id="qActions"></div>
   <div id="qFeedback" style="display:none"></div>
 </div>
@@ -7843,6 +7844,11 @@ function renderPlay() {
   playScene("playField", sc, "teach");
 }
 $("btnReplay").onclick = function () { playScene("playField", App.sc, "teach"); };
+$("btnQReplay").onclick = function () {
+  var q = App.quiz; if (!q) return;
+  var sc = q.list[q.i];
+  playScene("qField", sc, q.answered ? "teach" : "once");
+};
 
 // ==== ジャッジ ====
 function startQuiz() {
@@ -7865,7 +7871,7 @@ function renderQuiz() {
   $("qSit").textContent = sitText(sc, true);
   $("qBases").innerHTML = basesHTML(sc);
   $("qAsk").innerHTML = "きみは <b>" + E.ROLE_JA[App.role] + "</b>。" + askText(sc)
-    + '<span class="hint">一度だけ実速で流れます。見終わってからコールしてください</span>';
+    + '<span class="hint">実速で流れます。見終わってからコールしてください（もう一度見ることもできます）</span>';
   $("qFeedback").style.display = "none"; $("qFeedback").innerHTML = "";
   var calls = callsOf(sc);
   $("qActions").innerHTML = '<div class="calls">'
@@ -7873,8 +7879,11 @@ function renderQuiz() {
     + '<button class="call safe" id="call1" disabled>' + signHTML(sc.q, 1) + calls[1] + "</button></div>";
   $("call0").onclick = function () { answer(0); };
   $("call1").onclick = function () { answer(1); };
+  $("btnQReplay").style.display = "none";
+  $("btnQReplay").textContent = "▶ もう一度見る";
   playScene("qField", sc, "once", function () {
     q.ready = true; $("call0").disabled = false; $("call1").disabled = false;
+    $("btnQReplay").style.display = "";
   });
 }
 function answer(idx) {
@@ -7888,6 +7897,7 @@ function answer(idx) {
   $("qScore").textContent = "正解 " + q.correct;
   $("call0").disabled = true; $("call1").disabled = true;
   playScene("qField", sc, "teach");
+  $("btnQReplay").textContent = "▶ もう一度見る（実速→スロー）";
   var last = q.i >= q.list.length - 1;
   $("qFeedback").style.display = "";
   $("qFeedback").innerHTML =
