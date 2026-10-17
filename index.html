@@ -4845,20 +4845,27 @@ var FIG = (() => {
   //   外へ開くと膝が足より外へ出る。すねを面0（まっすぐ前後）にすると膝が足の真上に来て、足幅はそのまま肩幅になる
   const LEG4 = (l) => l.length > 3 ? l : [l[0], l[1], l[2], l[2]];
   const P = (tau, psi, lL, rL, lA, rA, yaw, h) => ({ tau, psi, lL: LEG4(lL), rL: LEG4(rL), lA, rA, yaw: yaw || 0, h: h == null ? null : h });
-  // 内野手の構え（06 A）：膝を曲げて腰を落とし、手は体の前に低く（前は棒立ち・手が胸の高さやった）
-  const READY = P(30, 0, [42, 70, -24, 0], [42, 70, 24, 0], [42, -4, 30], [42, 4, 30]);   // 膝は報告の60°より少し深く（骨盤0.64m）
-  // ゴロ：左足を出しながら沈む（06 C3）／捕球の瞬間（06 D：お尻を膝の高さへ・左足が前・グラブは体の前の地面）
-  const LOW = P(50, 0, [62, 72, -14, 0], [64, 100, 16, 0], [70, -4, 22], [70, 6, 32]);
-  const DEEP = P(55, 0, [75, 110, -22, -4], [60, 116, 22, 4], [80, 8, 5], [54, -16, 60]);
-  // 頭の上・顔の前のフライ（03 A 捕球）：少し反って、グラブ側の左足が前
-  const HIGH = P(-5, -8, [20, 25, 0], [-12, 20, 0], [150, 28, 15], [148, -28, 18]);
-  // 捕手（08 A 走者なし）：太ももほぼ水平・足は肩幅より広く・素手は体の後ろ（前は素手が前に出とった）
-  // Astra 2026-10-17：膝が外へ張り足首が内へ戻っとった→すねの開き0（膝幅0.63→0.46m・足首幅0.38→0.46m）
-  const CATCH = P(40, 0, [85, 125, -20, 0], [85, 125, 20, 0], [77, -5, 73], [0, 35, 25]);
-  // 打者（07）：構え／踏み込み（投手のリリースの手前で着地）／見送った後。腕はバットの握りに合わせて別に曲げる
-  const BAT = P(20, -5, [26, 33, -60, -20], [29, 37, 60, 20], [45, 35, 85], [45, 70, 100]);
-  const BAT_STRIDE = P(20, 2, [30, 30, -68, -25], [31, 42, 60, 20], [45, 35, 85], [45, 70, 100]);
-  const BAT_TAKE = P(14, 0, [28, 24, -66, -25], [25, 20, 58, 20], [45, 35, 85], [45, 70, 100]);
+  // ★アストラ 2026-10-18（とと「アストラならもう少しリアルにできない？各動きを調べて反映させて」）：少年野球の指導資料で動作ごとに調べ直した形。
+  //   数値は資料から測った値やなく、この骨格向けの調整値（出典は 調査_動作の形 の Codex回答）
+  // 数値は実測値ではなく、この骨格で検証する初期調整値。
+  const IDLE = P(4, 0, [8, 12, -12, 0], [8, 12, 12, 0],
+    [8, -12, 20], [6, 12, 22]);
+  const READY = P(24, 0, [48, 76, -24, 0], [48, 76, 24, 0],
+    [22, -14, 45], [20, 14, 50]);
+  const LOW = P(34, 0, [67, 104, -18, 0], [63, 106, 20, 0],
+    [24, -8, 38], [25, 12, 58]);
+  const DEEP = P(38, 0, [92, 130, -20, 0], [85, 132, 22, 0],
+    [18, -8, 35], [28, 12, 65]);
+  const HIGH = P(-3, 0, [18, 28, -8, 0], [12, 25, 8, 0],
+    [128, -8, 42], [112, 10, 65]);
+  const CATCH = P(22, 0, [98, 145, -22, 0], [98, 145, 22, 0],
+    [48, -8, 70], [-10, 25, 35]);
+  const BAT = P(12, -4, [26, 40, -55, 0], [30, 44, 55, 0],
+    [35, 25, 90], [38, 60, 100]);
+  const BAT_STRIDE = P(14, -2, [31, 36, -60, 0], [28, 44, 55, 0],
+    [35, 25, 90], [38, 60, 100]);
+  const BAT_TAKE = P(9, 0, [26, 35, -58, 0], [25, 35, 55, 0],
+    [32, 25, 90], [35, 60, 100]);
   // 走る（09）：1歩（左足着地→右足着地）。接地0〜0.6・空中0.6〜1.0。遊脚はかかとをお尻の下まで畳んで振り上げる。
   //   腕は前で曲げて手が頬の高さ、後ろで開いて腰の後ろへ（前は肘が固定で歩きに見えた）
   const RUN_AT = [0, 0.15, 0.3, 0.45, 0.6, 0.68, 0.75, 0.9];
@@ -4885,24 +4892,27 @@ var FIG = (() => {
   //   踏み出す前は体ごと横を向き（左肩が送球先）、腰→胸→腕の順に回って、振り抜きで右脚が前へ出る。
   //   前は骨盤がずっと送球先を向いたまま胸だけ60〜70°ねじっとって、送球に見えんかった
   const THROWS = {
-    if: { at: [-0.55, -0.30, -0.12, 0, 0.22], p: [            // 内野手（ゴロ→一塁）
-      P(35, 10, [30, 55, -15], [10, 55, 10], [45, -10, 70], [45, 15, 80], 30),
-      P(22, 15, [50, 70, -70], [8, 40, 15], [75, -70, 30], [85, 100, 80], 80),
-      P(12, 30, [50, 10, -50], [-35, 20, 15], [80, -80, 25], [95, 105, 90], 55),
-      P(25, -10, [32, 8, -25], [-20, 15, 15], [25, -35, 100], [112, 62, 18], 20),
-      P(45, -35, [20, 15, -10], [35, 70, 0], [10, -30, 90], [55, -10, 30], -15)] },   // 振り抜きの面 -60→-10（Astra：手が背中側へ回っとった）
-    c: { at: [-0.45, -0.30, -0.12, 0, 0.22], p: [             // 捕手（二塁送球）：しゃがみから立ちながら
-      P(40, 0, [70, 110, -10], [65, 110, 15], [60, -10, 60], [50, 20, 90], 0),
-      P(30, 15, [50, 70, -20], [30, 50, 10], [60, -20, 80], [95, 85, 120], 60),
-      P(20, 25, [38, 15, -35], [-22, 22, 10], [75, -60, 45], [95, 105, 95], 35),
-      P(20, -8, [28, 10, -15], [-20, 18, 15], [20, -30, 100], [108, 68, 20], 12),
-      P(42, -35, [20, 15, -5], [30, 60, 5], [10, -30, 90], [55, -10, 30], -20)] },
-    of: { at: [-0.70, -0.42, -0.12, 0, 0.28], p: [            // 外野手（クロウホップ→本塁・三塁）
-      P(32, 0, [35, 40, -10], [-15, 45, 15], [50, -5, 60], [40, 25, 70], 45),
-      P(20, 10, [30, 70, -45], [10, 55, 20], [70, -60, 40], [75, 95, 80], 85),
-      P(10, 30, [60, 8, -60], [-45, 20, 15], [85, -85, 20], [95, 110, 95], 65),
-      P(22, -10, [32, 8, -20], [-25, 18, 10], [25, -35, 100], [112, 62, 15], 15),
-      P(46, -40, [20, 12, -10], [40, 75, 0], [5, -30, 90], [55, -10, 30], -20)] }
+    if: { at: [-0.55, -0.30, -0.12, 0, 0.22], p: [
+      P(28, 0, [48,76,-18,0], [40,72,18,0], [35,-10,80], [35,12,85], 15),
+      P(18, 8, [42,58,-65,0], [12,38,12,0], [55,-65,65], [75,65,90], 70),
+      P(12, 15, [42,20,-48,0], [-25,25,10,0], [48,-55,85], [90,65,95], 50),
+      P(22, -8, [34,18,-20,0], [-18,22,10,0], [15,-25,105], [106,22,35], 12),
+      P(32, -18, [20,25,-10,0], [26,62,4,0], [8,-18,90], [45,-25,55], -8)
+    ] },
+    c: { at: [-0.45, -0.30, -0.12, 0, 0.22], p: [
+      P(22, 0, [96,142,-22,0], [96,142,22,0], [40,-10,85], [38,12,90], 0),
+      P(20, 8, [55,88,-28,0], [44,78,12,0], [40,-35,85], [72,55,100], 45),
+      P(14, 12, [32,27,-32,0], [-15,30,8,0], [38,-40,90], [88,60,95], 30),
+      P(20, -6, [28,20,-15,0], [-15,24,10,0], [12,-20,105], [105,18,38], 8),
+      P(30, -15, [22,28,-6,0], [24,55,5,0], [8,-18,90], [44,-22,55], -8)
+    ] },
+    of: { at: [-0.70, -0.42, -0.12, 0, 0.28], p: [
+      P(22, 0, [32,48,-12,0], [10,45,12,0], [35,-10,80], [35,12,85], 25),
+      P(16, 8, [38,65,-50,0], [10,52,14,0], [58,-65,60], [78,70,88], 75),
+      P(10, 18, [48,18,-48,0], [-30,25,10,0], [50,-55,80], [92,70,95], 55),
+      P(22, -8, [34,16,-20,0], [-22,24,10,0], [15,-25,105], [108,22,35], 10),
+      P(34, -20, [20,24,-10,0], [32,65,4,0], [8,-18,90], [45,-25,55], -10)
+    ] }
   };
   // 足からのスライディング（05）。時刻は「先頭の靴が塁に着く瞬間」からの秒。左脚を伸ばし、右脚は膝を横へ開いて下に畳む。
   //   蹴る→腰が落ちる→ふくらはぎ→太もも→お尻の順に着き、手は肘を曲げて頭の高さ（前は膝が空中に立ち、腕が万歳やった）
@@ -4911,38 +4921,28 @@ var FIG = (() => {
   const SLIDE = {
     at: [-0.48, -0.34, -0.20, -0.10, 0, 0.10, 0.28],
     p: [
-      // 蹴り出し
-      P(-8, 0, [55,40,0,0], [-25,65,10,10],
-        [35,-25,70], [35,25,70], 0, 0.64),
-      // 腰を落とし、右膝を横へ
-      P(-28, 0, [80,28,0,0], [65,130,30,65],
-        [35,-25,60], [35,25,60], 0, 0.38),
-      // 右足を左膝の下へ回す
-      P(-48, 0, [98,22,0,0], [80,165,35,90],
-        [35,-25,50], [35,25,50], 0, 0.20),
-      // 右すねを地面と平行に
-      P(-55, 0, [100,26,0,0], [83,173,35,95],
-        [35,-25,45], [35,25,45], 0, 0.13),
-      // 触塁。先頭の膝を伸ばし切らない
-      P(-55, 0, [100,26,0,0], [84,174,35,95],
-        [35,-25,45], [35,25,45], 0, 0.12),
-      // 減速
-      P(-53, 0, [100,26,0,0], [84,174,35,95],
-        [35,-25,45], [35,25,45], 0, 0.12),
-      // 停止
-      P(-50, 0, [100,26,0,0], [84,174,35,95],
-        [35,-25,45], [35,25,45], 0, 0.12)
+      P(-8,0,[55,40,0,0],[-25,65,10,10],[35,-25,70],[35,25,70],0,0.64),
+      P(-32,0,[80,28,0,0],[65,130,30,65],[40,-20,65],[40,20,65],0,0.38),
+      P(-58,0,[98,22,0,0],[80,165,35,90],[50,-20,60],[50,20,60],0,0.20),
+      P(-65,0,[100,26,0,0],[83,173,35,95],[55,-20,55],[55,20,55],0,0.13),
+      P(-65,0,[100,26,0,0],[84,174,35,95],[55,-20,55],[55,20,55],0,0.12),
+      P(-65,0,[100,26,0,0],[84,174,35,95],[55,-20,55],[55,20,55],0,0.12),
+      P(-63,0,[100,26,0,0],[84,174,35,95],[55,-20,55],[55,20,55],0,0.12)
     ]
   };
   // 一塁手のフォース捕球（01）。時刻は捕球からの秒。右足をベースに固定し、送球が来ると見えたらグラブ側の左足を踏み出して伸びる
-  const STRETCH = { at: [-1.0, -0.4, -0.30, -0.15, 0, 0.15, 0.3], p: [
-    P(18, 0, [28, 28, -36, 0], [28, 28, 36, 0], [75, -10, 70], [70, 15, 80]),
-    P(18, 0, [28, 28, -36, 0], [28, 28, 36, 0], [75, -10, 70], [70, 15, 80]),
-    P(20, -4, [34, 26, -3], [4, 22, 3], [100, 0, 35], [85, -5, 70]),
-    P(21, -6, [44, 22, -4], [-18, 16, 4], [112, 0, 15], [90, -8, 70]),
-    P(20, -10, [50, 20, -4], [-35, 12, 4], [116, 0, 5], [95, -12, 70]),
-    P(18, -4, [30, 30, -6], [-10, 18, 4], [100, 0, 30], [95, -10, 70]),
-    P(18, -4, [30, 30, -6], [-10, 18, 4], [100, 0, 30], [95, -10, 70])] };
+  const STRETCH = {
+    at: [-1.0, -0.4, -0.30, -0.15, 0, 0.15, 0.3],
+    p: [
+      P(16,0,[28,42,-25,0],[28,42,25,0],[45,-10,65],[30,15,75]),
+      P(16,0,[28,42,-25,0],[28,42,25,0],[45,-10,65],[30,15,75]),
+      P(22,-3,[40,48,-5,0],[-8,33.179,5,0],[55,-8,55],[22,15,85]),
+      P(28,-5,[52,48,-4,0],[-28,16.412,4,0],[65,-6,45],[15,15,95]),
+      P(30,-6,[58,45,-4,0],[-35,13.097,4,0],[70,-5,40],[12,15,95]),
+      P(28,-5,[55,46,-4,0],[-32,13.827,4,0],[65,-6,45],[15,15,95]),
+      P(22,-3,[42,45,-6,0],[-18,20.894,4,0],[50,-8,60],[20,15,85])
+    ]
+  };
   const tableOf = (act) => act.kind === "slide" ? SLIDE : act.kind === "stretch" ? STRETCH : THROWS[act.v || "if"];
   // 表の時刻 u の姿勢（キーの間はなめらかに＝3u²−2u³。表の外は端の姿勢）
   const actPose = (tb, u) => {
@@ -5013,8 +5013,9 @@ var FIG = (() => {
     const fl = nrm([o.face[0], 0, o.face[1]]);
     let F = [fl[0], 0, fl[2]], R = [F[2], 0, -F[0]];
     let p, actP = null;
-    if (o.pose === "catcher") p = CATCH;
-    else if (o.pose === "batter") p = mixP(BAT_STRIDE, BAT_TAKE, o.take || 0);
+    if (o.pose === "idle") p = IDLE;
+    else if (o.pose === "catcher") p = CATCH;
+    else if (o.pose === "batter") p = mixP(mixP(BAT, BAT_STRIDE, clamp(o.stride || 0, 0, 1)), BAT_TAKE, o.take || 0);
     else {
       // 走り→低い構えの順に重ねる（逆にすると、走りながら低い球を捕る時に走る姿が勝って棒立ちで手だけ下がる）
       p = READY;
@@ -5022,8 +5023,8 @@ var FIG = (() => {
       if (o.low > 0) p = mixP(p, LOW, Math.min(1, o.low));
       if (o.low > 1) p = mixP(p, DEEP, Math.min(1, o.low - 1));
       if (o.high > 0) p = mixP(p, HIGH, o.high);
-      if (o.act && o.act.w > 0) { actP = actPose(tableOf(o.act), o.act.u); p = mixP(p, actP, o.act.w); }
     }
+    if (o.act && o.act.w > 0) { actP = actPose(tableOf(o.act), o.act.u); p = mixP(p, actP, o.act.w); }
     if (o.lefty) p = mirror(p);
     // 骨盤の向き：送球の前は体ごと横を向く（yaw）。顔の向き（face）は送球先のまま
     if (p.yaw) {
@@ -5561,10 +5562,9 @@ var V = (() => {
       return { kind: "throw", v: v, u: u, w: w, raw: raw, th: th, handW: cl(1 - Math.abs(raw) / 0.12) };
     }
     const sl = AC.slides[a.id];
-    if (sl && t >= sl.t - 0.80) {
-      // 表の前半（立った姿→低い姿）を早く進め、触塁の時刻（u=0）は変えん。0.4秒前で表の u=-0.20（骨盤0.24m）に届く
-      const dt = t - sl.t, u = dt < -0.40 ? 0.7 * (dt + 0.80) - 0.48 : dt < 0 ? 0.5 * dt : dt;
-      return { kind: "slide", u: u, w: cl((dt + 0.80) / 0.16), sl: sl };
+    if (sl && t >= sl.t - 0.48) {
+      const dt = t - sl.t;
+      return { kind: "slide", u: dt, w: cl((dt + 0.48) / 0.12), sl: sl };
     }
     const st = AC.stretch;
     if (st && st.by === a.id && t >= st.t - 1.2 && st.amt > 0) return { kind: "stretch", u: t - st.t, w: st.amt * cl((t - st.t + 1.2) / 0.2) * cl(1 - (t - st.t - 0.45) / 0.4) };
@@ -5654,13 +5654,13 @@ var V = (() => {
   // タッチの絵の当て所：走者がタッチの瞬間におる所（滑り込む走者は先頭の靴がそこ＝figure.js）。
   //   空タッチ（tag.at が走者から0.6m超）の場面だけは tag.at のまま＝「届いとらん」を見せる（Astra：触れたが読めん）
   //   ★当て所は走者の体の表面（野手の側）。真ん中へ当てると、グラブが体の中へ入って見えた（とと 2026-10-17「体を手がすり抜ける」）。
-  //   立っとる走者は胴の太さ＋グラブ（0.16m）、滑る走者は足の太さ＋グラブ（0.09m）だけ野手の側へ
+  //   立っとる走者は胴の太さ＋グラブ（0.16m）、滑る走者は足の太さ＋グラブ（0.12m）だけ野手の側へ
   const tagPoint = (scene, tg) => {
     const acts = autoActors(scene);
     const r = acts.filter((x) => x.id === tg.who)[0], f = acts.filter((x) => x.id === tg.by)[0];
     const rp = r ? W.lerpKeys(r.keys, tg.t) : null;
     if (rp && Math.hypot(rp[0] - tg.at[0], rp[1] - tg.at[1]) <= 0.6) {
-      const fp = f ? W.lerpKeys(f.keys, tg.t) : null, off = STANDING_TAG_Y[scene.id] != null ? 0.16 : 0.09;
+      const fp = f ? W.lerpKeys(f.keys, tg.t) : null, off = STANDING_TAG_Y[scene.id] != null ? 0.16 : 0.12;
       const dx = fp ? fp[0] - rp[0] : 0, dz = fp ? fp[1] - rp[1] : 0, l = Math.hypot(dx, dz);
       return l > 1e-6 ? [rp[0] + dx / l * off, TAG_H, rp[1] + dz / l * off] : [rp[0], TAG_H, rp[1]];
     }
@@ -5781,11 +5781,22 @@ var V = (() => {
       const poss = act && act.kind === "throw" && t >= act.th.ta && act.raw < 0 ? { inHand: act.raw >= -0.35 } : null;
       if (poss) inPoss = true;
       const isPitchCatcher = a.kind === "catcher" && scene.q === "pitch";
-      const pose = isPitchCatcher ? "catcher" : a.kind === "batter" ? "batter" : "ready";
+      // 捕手がしゃがむのは「投球を受ける場面」と「投球を受けて二塁へ投げる前」だけ（アストラ 2026-10-18）。
+      //   本塁で外野からの送球を受けてタッチする場面は立って受ける（前はずっとしゃがんだまま動いとった）
+      const cThrow = a.kind === "catcher" ? actsOf(scene).throws.filter((x) => x.by === a.id)[0] : null;
+      const catcherSquat = a.kind === "catcher" && (isPitchCatcher || (cThrow && t < cThrow.t + 0.28));
+      const pose = a.kind === "batter" ? "batter"
+        : catcherSquat ? "catcher"
+        : a.kind === "runner" && spd < 0.05 && !act ? "idle"
+        : "ready";
       const lefty = a.kind === "batter" && scene.pitch && scene.pitch.batter && scene.pitch.batter.side === "L";
 
       // グラブの行き先（野手だけ）。active＝ボールに向けて手を出しとる時。それ以外は手は自然に振る
       let gp = null, holding = false, two = 0, fitW = -1;
+      const flyReceiver = /^F[789]$/.test(a.id) &&
+        hold && hold.by === a.id &&
+        (scene.q === "catch" || scene.q === "tagup");
+      const catchLead = flyReceiver ? 0.22 : 0.55;
       if (a.kind !== "runner" && a.kind !== "batter" && b && !isPitchCatcher) {
         // ★とと 2026-09-08 指摘「捕球ができてない物を捕球としてある」：
         //   手が届く所にボールがあるなら、グラブはボールの所にある。それが「捕っている」という絵。
@@ -5823,9 +5834,9 @@ var V = (() => {
           const kk = k * k * (3 - 2 * k);
           gp = [at0[0] + (goal[0] - at0[0]) * kk, at0[1] + (goal[1] - at0[1]) * kk, at0[2] + (goal[2] - at0[2]) * kk];
           holding = true; two = 1;
-        } else if (hold && hold.by === a.id && t >= hold.t - 0.55) {
+        } else if (hold && hold.by === a.id && t >= hold.t - catchLead) {
           // ★フライ：捕る本人は、捕る所へグラブを構えて待つ（球を追いかけて上下させん）
-          const w = Math.min(1, Math.max(0, (t - (hold.t - 0.55)) / 0.55));
+          const w = Math.min(1, Math.max(0, (t - (hold.t - catchLead)) / catchLead));
           const c0 = W.lerpBall(ballKeys(scene), hold.t);
           const maxR = 0.9;
           let tx = c0[0], ty = Math.min(c0[1], heightOf(a) * 1.45), tz = c0[2];
@@ -5838,7 +5849,8 @@ var V = (() => {
           const c0 = W.lerpBall(ballKeys(scene), fld.ta);
           gp = [rest[0] + (c0[0] - rest[0]) * w2, rest[1] + (c0[1] - rest[1]) * w2, rest[2] + (c0[2] - rest[2]) * w2];
           two = w2;
-        } else if (dist <= REACH && b[1] <= heightOf(a) * 1.45) {
+        } else if (dist <= REACH && b[1] <= heightOf(a) * 1.45 &&
+                   !(flyReceiver && t < hold.t - catchLead)) {
           // 近づいてきたら、近いほどボールへ手を伸ばす（急に飛びつかん）
           const u = Math.pow(1 - dist / REACH, 0.6);
           gp = [rest[0] + (b[0] - rest[0]) * u, rest[1] + (b[1] - rest[1]) * u, rest[2] + (b[2] - rest[2]) * u];
@@ -5849,13 +5861,14 @@ var V = (() => {
       if (isPitchCatcher) {
         const k = ballKeys(scene), tA = k[k.length - 1][0], c = scene.pitch.cross;
         const D = W.PLATE_D, L = W.PLATE_L;
-        const restM = [xz[0] + D[0] * 0.60, 0.50, xz[1] + D[2] * 0.60];
+        const restM = [xz[0] + D[0] * 0.32, 0.50, xz[1] + D[2] * 0.32];
         const want = [restM[0] + L[0] * (c[0] - 0.0), Math.max(0.3, Math.min(1.1, c[1])), restM[2] + L[2] * (c[0] - 0.0)];
         const m = Math.max(0, Math.min(1, (t - (tA - 0.25)) / 0.2));
         gp = [restM[0] + (want[0] - restM[0]) * m, restM[1] + (want[1] - restM[1]) * m, restM[2] + (want[2] - restM[2]) * m];
         mitt = gp;
       }
       // 投げる時のグラブの腕は表どおり。素手を添える処理も止める（止めんと、投げる手がグラブの横へ引っ張られとった）
+      if (a.kind === "catcher") two = 0;
       if (act && act.kind === "throw" && act.w > 0.5) { gp = null; two = 0; }
       if (poss && !poss.inHand) holding = true;
       // 捕る位置を体の前に（ゴロ0.55m・胸0.40m・頭の上0.30m）。ストレッチ中は踏み足をベースから外さん範囲（0.15m）だけ
@@ -5889,10 +5902,17 @@ var V = (() => {
         if (w > 0 && (!plant || w > plant.w)) plant = { pt: x.pt, y: x.y, w: w };
       });
       // 打者：投球が来るまでは踏み込んだ形、通った0.1秒後から力を抜いて見送る（07）
-      let take = 0;
-      if (a.kind === "batter") { const k = ballKeys(scene); take = Math.max(0, Math.min(1, (t - k[k.length - 1][0] - 0.1) / 0.3)); }
+      let take = 0, stride = 0;
+      if (a.kind === "batter") {
+        const k = ballKeys(scene), t0 = k[0][0], t1 = k[k.length - 1][0];
+        const duration = Math.max(0.001, t1 - t0);
+        const u = Math.max(0, Math.min(1,
+          (t - t0 - duration * 0.25) / (duration * 0.40)));
+        stride = u * u * (3 - 2 * u);
+        take = Math.max(0, Math.min(1, (t - t1 - 0.1) / 0.3));
+      }
       const sk = FIG.build({ at: xz, face: face, run: pose === "ready" ? run : 0, steps: steps, flight: flight,
-                             low: low, pose: pose, lefty: lefty, glove: gp, high: high, two: two, look: look, take: take, fit: fit, plant: plant,
+                             low: low, pose: pose, lefty: lefty, glove: gp, high: high, two: two, look: look, take: take, stride: stride, fit: fit, plant: plant,
                              act: act ? { kind: act.kind, v: act.v, u: act.u, w: act.w } : null,
                              hand: null, handW: 0 });
       if (poss && poss.inHand) inHand = sk.hand;
@@ -5909,12 +5929,16 @@ var V = (() => {
         fig: fig, st: st, actor: a, xz: xz, extra: [],
         // 3Dの人（three_view.js）に渡す姿勢の材料。判定とテストは上の数字（画面の位置）で見る
         p3: { at: xz, face: face, run: pose === "ready" ? run : 0, spd: spd, steps: steps, low: low, pose: pose,
-              lefty: lefty, glove: gp, look: look, t: t, team: (a.kind === "runner" || a.kind === "batter") ? "atk" : "def",
+              lefty: lefty, isMitt: a.kind === "catcher", glove: gp, look: look, t: t, team: (a.kind === "runner" || a.kind === "batter") ? "atk" : "def",
               num: st.num, faded: isPitchCatcher, bat: sk.bat ? [sk.bat.a, sk.bat.b] : null,
               act: act ? { kind: act.kind, w: act.w } : null, skel: sk,
               plant: plant ? { pt: [plant.pt[0], plant.y, plant.pt[1]], w: plant.w } : null,
               // 3Dの選手が骨格（figure.js の姿勢の表）にどれだけ合わせるか。走っとる時だけ素材の動き（全力疾走など）
-              follow: Math.max(act ? act.w : 0, 1 - Math.min(1, run * 1.25), Math.min(1, low)) }
+              follow: Math.max(
+                 pose === "catcher" || pose === "batter" || pose === "idle" ? 1 : 0,
+                 act ? act.w : 0,
+                 1 - Math.min(1, run * 2.5),   // 走っとる間は素材の走り（腕を振る）を優先（ゆっくり走ると構えの腕が半分混ざって、両手を前に出して走っとった）
+                 Math.min(1, low), Math.min(1, high)) }
       };
       deep.push(person);
       // 走者の足（印の的）。いちばん低い靴のつま先＝地面に着いとる足
@@ -6163,6 +6187,9 @@ var R3 = (() => {
 
   // ★グローブを形から作る（アストラ 2026-10-17・とと「グローブが変」）：前は茶色の球を骨格のグラブの位置に置いとっただけで、
   //   手が届かん時は玉が手から離れて浮いとった。今は3Dの手首に付けて、ポケットを球へ向ける
+  const gloveSeat = mitt =>
+    new THREE.Vector3(0, mitt ? 0.121 : 0.105, 0.018);
+
   function makeGlove(mitt = false) {
     const g = new THREE.Group();
     const leather = new THREE.MeshStandardMaterial({
@@ -6263,7 +6290,7 @@ var R3 = (() => {
       cuff.push([0.032*Math.cos(a),0.012,0.023*Math.sin(a)]);
     }
     tube(cuff, 0.008, leather, true);
-    g.userData.ballSeat = new THREE.Vector3(0, cy, 0.018);
+    g.userData.ballSeat = gloveSeat(mitt);
     return g;
   }
 
@@ -6352,6 +6379,9 @@ var R3 = (() => {
     Object.keys(clips).forEach((n) => { act[n] = mixer.clipAction(clips[n]); act[n].play(); act[n].setEffectiveWeight(0); });
     const bones = {};
     root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+    // ★守備はグローブをはめる左手を縮めて、グローブの中に収める（とと 2026-10-18「グローブから手が出てる」）。
+    //   グローブは手首に付けとるが、素手の指がそのまま伸びてグローブの外へはみ出しとった。手の骨ごと縮めると指も手のひらも手首へ寄る
+    if (team === "def" && bones.hand_l) bones.hand_l.scale.setScalar(0.02);
     // 顔の前（モデルの前＝+Z）を、頭の骨の中ではどの向きか覚えておく（頭をボールへ向けるのに使う）
     root.updateMatrixWorld(true);
     let headLocal = null;
@@ -6387,6 +6417,39 @@ var R3 = (() => {
     turnBone(lo, _q.setFromUnitVectors(c2.clone().sub(b2).normalize(), goal.sub(b2).normalize()));
   };
 
+  const fitGlovePocket = (up, lo, hand, target, pole, forward, mitt) => {
+    const seat = gloveSeat(mitt);
+    let bestError = Infinity;
+    const bestUp = up.quaternion.clone(), bestLo = lo.quaternion.clone();
+    for (let i = 0; i < 8; i++) {
+      const wrist = wp(hand);
+      const q = gloveFrame(wrist, wp(lo), target, forward);
+      if (!q) break;
+      const offset = seat.clone().applyQuaternion(q);
+      const error = wrist.clone().add(offset).distanceTo(target);
+      if (error < bestError) {
+        bestError = error;
+        bestUp.copy(up.quaternion); bestLo.copy(lo.quaternion);
+      }
+      if (error < 0.002) break;
+      reach(up, lo, hand, target.clone().sub(offset), pole);
+    }
+    const wrist = wp(hand);
+    const lastQ = gloveFrame(wrist, wp(lo), target, forward);
+    const lastError = lastQ
+      ? wrist.clone().add(seat.clone().applyQuaternion(lastQ)).distanceTo(target)
+      : Infinity;
+    if (lastError > bestError) {
+      up.quaternion.copy(bestUp); lo.quaternion.copy(bestLo);
+      up.updateMatrixWorld(true);
+    }
+    const finalWrist = wp(hand);
+    const q = gloveFrame(finalWrist, wp(lo), target, forward);
+    return { q, error: q
+      ? finalWrist.clone().add(seat.clone().applyQuaternion(q)).distanceTo(target)
+      : Infinity };
+  };
+
   const frac = (x) => x - Math.floor(x);
   const legFix = [];
   const plantFoot = (k, pl, face) => {
@@ -6404,7 +6467,7 @@ var R3 = (() => {
     const fwd = v3([face[0], 0, face[1]]).sub(v3([0, 0, 0])).normalize();
     reach(th, ca, ft, goal, fwd.add(new THREE.Vector3(0, 0.2, 0)));
   };
-  const footToSkel = (k, sk, w, lead) => {
+  const footToSkel = (k, sk, w, lead, toeLead = false) => {
     const B = k.bones;
     const one = (s) => {
       const th = B["thigh_" + s], ca = B["calf_" + s], ft = B["foot_" + s];
@@ -6413,7 +6476,7 @@ var R3 = (() => {
       // 滑る先頭の足は、骨格のつま先の位置へ足首を置く（素材の足は滑る時につま先が上を向き、前へ伸びんので、
       //   足首を骨格の足首へ置くと靴1足ぶん塁に届かんかった）
       let tgt = v3(lg.ank);
-      if (s === lead) { const toe = lg.shoe.toe; tgt = v3([toe[0] + (lg.ank[0] - toe[0]) * 0.25, Math.max(lg.ank[1], 0.075), toe[2] + (lg.ank[2] - toe[2]) * 0.25]); }
+      if (s === lead && toeLead) { const toe = lg.shoe.toe; tgt = v3([toe[0] + (lg.ank[0] - toe[0]) * 0.25, Math.max(lg.ank[1], 0.075), toe[2] + (lg.ank[2] - toe[2]) * 0.25]); }
       const goal = wp(ft).lerp(tgt, w);
       const mid = v3(lg.hip).add(v3(lg.ank)).multiplyScalar(0.5);
       reach(th, ca, ft, goal, v3(lg.knee).sub(mid));
@@ -6469,6 +6532,8 @@ var R3 = (() => {
   };
   // 1人の姿勢。p3 は view.js が出す材料（位置・向き・速さ・歩数・しゃがみ・グラブ）
   const poseKid = (k, p) => {
+    k.gloveQ = null;
+    k.gloveError = null;
     const ang = Math.atan2(p.face[0], -p.face[1]);   // three の前(+Z)を、世界の向き face へ
     k.root.position.copy(v3([p.at[0], 0, p.at[1]]));
     k.root.rotation.set(0, ang, 0);
@@ -6495,7 +6560,12 @@ var R3 = (() => {
     //   靴の位置がずれる。スライディングの先頭の足が塁に届かず、野手の足へ入って見えた）。
     //   膝は骨格の膝の側へ曲げる。滑っとる時は、先頭の足が届かん分だけ体ごと寄せる（判定に使う足の位置を絵で守る）
     legFix.length = 0;
-    if (p.skel && p.follow > 0.3) footToSkel(k, p.skel, p.follow, p.act && p.act.kind === "slide" ? "l" : null);
+    const slideLead = p.act && p.act.kind === "slide";
+    const stretchLead = p.act && p.act.kind === "stretch";
+    const fixedLead = slideLead ? "l" : stretchLead ? "r" : null;
+    if (p.skel && p.follow > 0.3) {
+      footToSkel(k, p.skel, p.follow, fixedLead, !!slideLead);
+    }
     // 走って塁を踏む足（素材の走る動きのまま、その瞬間に低い方の足だけを塁の上面へ届かせる）
     if (p.plant && p.plant.w > 0 && !(p.follow > 0.3)) plantFoot(k, p.plant, p.face);
     // グラブの手：右投げ＝左手。目標がある時は2本の骨で届かせる（肘は外・下へ）
@@ -6503,7 +6573,11 @@ var R3 = (() => {
     const up = B["upperarm_" + L], lo = B["lowerarm_" + L], hand = B["hand_" + L];
     let gw = null;
     // 捕手：ミットを体の前（ひざの高さより少し上）に構える
-    const gT = p.glove || (p.pose === "catcher" ? [p.at[0] + p.face[0] * 0.42, 0.55, p.at[1] + p.face[1] * 0.42] : null);
+    const throwing = p.act && p.act.kind === "throw" && p.act.w > 0.5;
+    const gT = throwing ? null
+      : p.glove || (p.pose === "catcher"
+          ? [p.at[0] + p.face[0] * 0.32, 0.50,
+             p.at[1] + p.face[1] * 0.32] : null);
     if (gT && up && lo && hand) {
       const tgt = v3(gT);
       // ★3Dの腕は骨格より約10cm短い（上腕0.195＋前腕0.189 vs 0.255＋0.225）。地面のゴロへ届かず、グローブが膝の高さで
@@ -6516,12 +6590,16 @@ var R3 = (() => {
           const pelY = B.pelvis ? wp(B.pelvis).y : 1;
           if (pelY + mv.y < 0.28) mv.y = Math.min(0, 0.28 - pelY);   // 腰は地面から0.28mより下げん
           k.root.position.add(mv); k.root.updateMatrixWorld(true);
-          if (p.skel) footToSkel(k, p.skel, 1, null);
+          if (p.skel) footToSkel(k, p.skel, 1, fixedLead, !!slideLead);
         }
       }
       const sh = wp(up), dir = tgt.clone().sub(sh).normalize();
       const side = new THREE.Vector3(Math.cos(ang), 0, -Math.sin(ang)).multiplyScalar(p.lefty ? -1 : 1);  // 本人の左
-      reach(up, lo, hand, tgt.clone().sub(dir.multiplyScalar(0.11)), side.add(new THREE.Vector3(0, -0.6, 0)));   // ポケットの中心は手首から約0.11m（makeGlove）
+      const pocket = fitGlovePocket(up, lo, hand, tgt,
+        side.add(new THREE.Vector3(0, -0.6, 0)),
+        v3([p.face[0], 0, p.face[1]]), !!p.isMitt);
+      k.gloveQ = pocket.q;
+      k.gloveError = pocket.error;
       gw = tgt;
     } else if (hand) gw = wp(hand);
     // 打者：両手でバットの柄を握る
@@ -6536,21 +6614,31 @@ var R3 = (() => {
     }
     // 頭：見る所（ボール・投げる先）へ向ける。首と頭で半分ずつ・最大70°（調査：頭が固定だと人形に見える）
     if (p.look && B.Head && B.neck_01 && k.headLocal) {
-      const aim = (bone, part) => {
-        const hp = wp(B.Head), cur = k.headLocal.clone().applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()));
-        const want = v3(p.look).sub(hp).normalize();
-        // 見上げは50°・見下ろしは25°まで（グラブを胸に抱えた時に、首が折れたように下を向いとった）
-        const el = Math.asin(Math.max(-1, Math.min(1, want.y))), lo = -25 * Math.PI / 180, hi = 50 * Math.PI / 180;
-        if (el < lo || el > hi) {
-          const e2 = Math.max(lo, Math.min(hi, el)), hz = new THREE.Vector3(want.x, 0, want.z).normalize();
-          want.copy(hz.multiplyScalar(Math.cos(e2))).setY(Math.sin(e2));
+      const hp = wp(B.Head);
+      const cur = k.headLocal.clone()
+        .applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const want = v3(p.look).sub(hp);
+      if (want.lengthSq() > 1e-10) {
+        want.normalize();
+        const el = Math.asin(THREE.MathUtils.clamp(want.y, -1, 1));
+        const e = THREE.MathUtils.clamp(el,
+          -25 * Math.PI / 180, 50 * Math.PI / 180);
+        const hz = new THREE.Vector3(want.x, 0, want.z);
+        if (hz.lengthSq() < 1e-10) hz.set(cur.x, 0, cur.z);
+        if (hz.lengthSq() < 1e-10) hz.set(0, 0, 1);
+        hz.normalize();
+        want.copy(hz.multiplyScalar(Math.cos(e)));
+        want.y = Math.sin(e);
+        const angle = cur.angleTo(want);
+        if (angle > 1e-4) {
+          const amount = Math.min(1, (70 * Math.PI / 180) / angle);
+          const total = new THREE.Quaternion().setFromUnitVectors(cur, want);
+          const half = new THREE.Quaternion().slerp(total, amount * 0.5);
+          turnBone(B.neck_01, half);
+          turnBone(B.Head, half);
         }
-        const ang = cur.angleTo(want);
-        if (ang < 1e-3) return;
-        const lim = Math.min(1, (70 * Math.PI / 180) / ang);
-        turnBone(bone, _id.clone().slerp(_q.setFromUnitVectors(cur, want), lim * part));
-      };
-      aim(B.neck_01, 0.5); aim(B.Head, 1);
+      }
     }
     return gw;
   };
@@ -6590,7 +6678,7 @@ var R3 = (() => {
         const aim = !gl.has && flying ? v3(flying.w)
           : p.look ? v3(p.look) : null;
         const forward = v3([p.face[0], 0, p.face[1]]);
-        const q = gloveFrame(wrist, elbow, aim, forward);
+        const q = k.gloveQ || gloveFrame(wrist, elbow, aim, forward);
         if (!q) return;
 
         let gm = gloves[gi];
@@ -7462,13 +7550,13 @@ var SCENES = [
     ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
     actors: [
-      { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [3.06, 23.0, 22.25], [3.46, 23.0, 22.9]] },
-      { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [2.90, 22.95, 22.9]] },
+      { id: "R1", kind: "runner",  keys: [[0, 23.0, 2.5], [2.76, 23.05, 20.95], [3.06, 23.05, 22.15], [3.46, 23.05, 22.81], [4.0, 23.05, 22.81]] },   // 塁の手前の縁へ（U2-01 と同じ形）
+      { id: "F4", kind: "fielder", num: 4, keys: [[0, 19.0, 13.0], [2.80, 22.55, 22.30], [4.0, 22.55, 22.30]] },   // 走路の内野側の横で構える（塁の真上に立つと滑り込む走者とぶつかった）
       { id: "F2", kind: "catcher", num: 2, keys: [[0, -1.0, -1.0]] }
     ],
-    ball: { keys: [[0, -1.0, 0.6, -1.0], [0.4, -0.8, 1.5, -0.7], [3.00, 22.95, 0.45, 22.75]] },
+    ball: { keys: [[0, -1.0, 0.6, -1.0], [0.4, -0.8, 1.5, -0.7], [3.00, 22.6, 0.45, 22.35]] },
     events: {
-      tag: { t: 3.06, by: "F4", at: [23.05, 22.75], who: "R1" },
+      tag: { t: 3.06, by: "F4", at: [23.05, 22.15], who: "R1" },
       touch: { t: 3.46, who: "R1", base: "2B" }
     },
     watch: "動かない。止まって、グラブと足の順番だけを見る",
