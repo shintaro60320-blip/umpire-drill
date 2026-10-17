@@ -4906,14 +4906,34 @@ var FIG = (() => {
   };
   // 足からのスライディング（05）。時刻は「先頭の靴が塁に着く瞬間」からの秒。左脚を伸ばし、右脚は膝を横へ開いて下に畳む。
   //   蹴る→腰が落ちる→ふくらはぎ→太もも→お尻の順に着き、手は肘を曲げて頭の高さ（前は膝が空中に立ち、腕が万歳やった）
-  const SLIDE = { at: [-0.48, -0.34, -0.20, -0.10, 0, 0.10, 0.28], p: [
-    P(-8, 0, [55, 40, 0], [-30, 10, 0], [35, -30, 90], [35, 30, 90], 0, 0.64),
-    P(-28, 0, [75, 15, 0], [45, 110, 35], [30, -40, 90], [30, 40, 90], 0, 0.42),
-    P(-35, 0, [90, 8, 0], [82, 140, 50], [30, -40, 90], [30, 40, 90], 0, 0.24),   // 後傾は Astra 2026-10-17 で弱めた
-    P(-40, 0, [98, 5, 0], [88, 155, 58], [25, -40, 88], [25, 40, 88], 0, 0.17),   // （60°やと後ろに転ぶように見えた）
-    P(-40, 0, [88, 5, 0], [88, 160, 60], [25, -40, 85], [25, 40, 85], 0, 0.15),
-    P(-36, 0, [84, 10, 0], [88, 160, 60], [28, -40, 85], [28, 40, 85], 0, 0.15),
-    P(-32, 0, [88, 8, 0], [88, 160, 60], [30, -40, 80], [30, 40, 80], 0, 0.15)] };
+  // ★アストラ 2026-10-17（とと「スライディングの形が変」）：ベントレッグ（4の字）。お尻と太ももの外側が地面に着き、
+  //   先頭（左）の膝は伸ばし切らん・右脚は左膝の下へ畳んですねを地面と平行に・手は地面から上げる
+  const SLIDE = {
+    at: [-0.48, -0.34, -0.20, -0.10, 0, 0.10, 0.28],
+    p: [
+      // 蹴り出し
+      P(-8, 0, [55,40,0,0], [-25,65,10,10],
+        [35,-25,70], [35,25,70], 0, 0.64),
+      // 腰を落とし、右膝を横へ
+      P(-28, 0, [80,28,0,0], [65,130,30,65],
+        [35,-25,60], [35,25,60], 0, 0.38),
+      // 右足を左膝の下へ回す
+      P(-48, 0, [98,22,0,0], [80,165,35,90],
+        [35,-25,50], [35,25,50], 0, 0.20),
+      // 右すねを地面と平行に
+      P(-55, 0, [100,26,0,0], [83,173,35,95],
+        [35,-25,45], [35,25,45], 0, 0.13),
+      // 触塁。先頭の膝を伸ばし切らない
+      P(-55, 0, [100,26,0,0], [84,174,35,95],
+        [35,-25,45], [35,25,45], 0, 0.12),
+      // 減速
+      P(-53, 0, [100,26,0,0], [84,174,35,95],
+        [35,-25,45], [35,25,45], 0, 0.12),
+      // 停止
+      P(-50, 0, [100,26,0,0], [84,174,35,95],
+        [35,-25,45], [35,25,45], 0, 0.12)
+    ]
+  };
   // 一塁手のフォース捕球（01）。時刻は捕球からの秒。右足をベースに固定し、送球が来ると見えたらグラブ側の左足を踏み出して伸びる
   const STRETCH = { at: [-1.0, -0.4, -0.30, -0.15, 0, 0.15, 0.3], p: [
     P(18, 0, [28, 28, -36, 0], [28, 28, 36, 0], [75, -10, 70], [70, 15, 80]),
@@ -6141,6 +6161,132 @@ var R3 = (() => {
     return [(q.x + 1) / 2 * Wp, (1 - q.y) / 2 * Hp];
   };
 
+  // ★グローブを形から作る（アストラ 2026-10-17・とと「グローブが変」）：前は茶色の球を骨格のグラブの位置に置いとっただけで、
+  //   手が届かん時は玉が手から離れて浮いとった。今は3Dの手首に付けて、ポケットを球へ向ける
+  function makeGlove(mitt = false) {
+    const g = new THREE.Group();
+    const leather = new THREE.MeshStandardMaterial({
+      color: 0x86512f, roughness: 0.9, side: THREE.DoubleSide
+    });
+    const lining = new THREE.MeshStandardMaterial({
+      color: 0x50301d, roughness: 1, side: THREE.DoubleSide
+    });
+    const lace = new THREE.MeshStandardMaterial({color: 0xc7955d, roughness: 1});
+    function tube(points, radius, material, closed = false) {
+      const curve = new THREE.CatmullRomCurve3(
+        points.map(p => new THREE.Vector3(...p)), closed, "centripetal"
+      );
+      const m = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, closed ? 48 : 16, radius, 6, closed),
+        material
+      );
+      g.add(m);
+      if (!closed && radius >= 0.014) {
+        for (const p of [points[0], points[points.length - 1]]) {
+          const cap = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 8), material);
+          cap.position.set(...p);
+          g.add(cap);
+        }
+      }
+      return m;
+    }
+    const rx = mitt ? 0.100 : 0.066;
+    const ry = mitt ? 0.108 : 0.087;
+    const cy = mitt ? 0.121 : 0.105;
+    const rimZ = mitt ? 0.047 : 0.035;
+    function shell(offset, material) {
+      const vertices = [], indices = [], N = 40, rings = 8;
+      for (let j = 0; j <= rings; j++) {
+        const r = j / rings;
+        for (let i = 0; i <= N; i++) {
+          const a = 2 * Math.PI * i / N;
+          vertices.push(rx * r * Math.cos(a), cy + ry * r * Math.sin(a),
+            -0.020 + (rimZ + 0.020) * r * r + offset);
+        }
+      }
+      for (let j = 0; j < rings; j++) for (let i = 0; i < N; i++) {
+        const a = j * (N + 1) + i, b = a + N + 1;
+        indices.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      g.add(new THREE.Mesh(geo, material));
+    }
+    shell(-0.008, leather);
+    shell(0, lining);
+    const rim = [];
+    for (let i = 0; i < 40; i++) {
+      const a = 2 * Math.PI * i / 40;
+      rim.push([rx * Math.cos(a), cy + ry * Math.sin(a), rimZ - 0.003]);
+    }
+    tube(rim, mitt ? 0.014 : 0.008, leather, true);
+
+    if (!mitt) {
+      // 小指から人差し指へ。指先をポケット側へ軽く丸める。
+      const fingers = [
+        [-0.050, 0.146, -0.070, 0.202],
+        [-0.023, 0.166, -0.030, 0.232],
+        [ 0.004, 0.174,  0.010, 0.239],
+        [ 0.031, 0.163,  0.048, 0.223]
+      ];
+      fingers.forEach(([x0, y0, x1, y1]) => {
+        tube([[x0,y0,0.018], [x1,y1-0.025,0.024], [x1,y1,0.044]],
+          0.014, leather);
+        tube([[x0,y0,0.033], [x1,y1-0.025,0.039], [x1,y1,0.057]],
+          0.0018, lace);
+      });
+      tube([[0.046,0.049,0.008], [0.095,0.100,0.025],
+        [0.100,0.158,0.050]], 0.019, leather);
+      // 親指と人差し指をつなぐウェブ。ポケット全体は塞がない。
+      for (let i = 0; i < 4; i++) {
+        const t = i / 3;
+        tube([[0.050,0.155+0.048*t,0.040],
+          [0.074,0.146+0.033*t,0.026],
+          [0.098,0.128+0.031*t,0.047]], 0.004, lace);
+      }
+    } else {
+      // ミットは指を分離せず、厚い縁と親指側のふくらみを作る。
+      tube([[0.063,0.035,0.025], [0.103,0.092,0.039],
+        [0.079,0.177,0.049]], 0.019, leather);
+      for (let i = 0; i < 3; i++) {
+        tube([[0.018,0.192+i*0.008,0.041],
+          [0.047,0.183+i*0.008,0.028],
+          [0.075,0.168+i*0.008,0.046]], 0.004, lace);
+      }
+    }
+    // 手首の入口。原点はこの穴の中心。
+    const cuff = [];
+    for (let i = 0; i < 24; i++) {
+      const a = 2 * Math.PI * i / 24;
+      cuff.push([0.032*Math.cos(a),0.012,0.023*Math.sin(a)]);
+    }
+    tube(cuff, 0.008, leather, true);
+    g.userData.ballSeat = new THREE.Vector3(0, cy, 0.018);
+    return g;
+  }
+
+  function gloveFrame(wrist, elbow, target, forward) {
+    const y = wrist.clone().sub(elbow);
+    if (y.lengthSq() < 1e-10) return null;
+    y.normalize();
+    const project = v => v.clone().addScaledVector(y, -v.dot(y));
+    let z = target ? project(target.clone().sub(wrist)) : new THREE.Vector3();
+    if (z.lengthSq() < 1e-8) z = project(forward);
+    if (z.lengthSq() < 1e-8) {
+      const a = Math.abs(y.y) < 0.9
+        ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
+      z = project(a);
+    }
+    z.normalize();
+    const x = y.clone().cross(z).normalize();
+    z.crossVectors(x,y).normalize();
+    return new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(x,y,z)
+    );
+  }
+
   const init = (onReady) => {
     if (ready || failed) { if (ready && onReady) onReady(); return; }
     try {
@@ -6171,7 +6317,7 @@ var R3 = (() => {
         scene.add(m);
       });
       gloveGeo = new THREE.SphereGeometry(1, 16, 12);
-      gloveMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.8 });
+      gloveMat = null;   // グローブは makeGlove で作る（gloveGeo は持っとる球だけ）
       heldMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
       new THREE.GLTFLoader().parse(b64ToBuf(KID_GLB_B64), "", (g) => {
         base = g;
@@ -6276,7 +6422,7 @@ var R3 = (() => {
     if (lead) {
       const miss = one(lead);
       if (miss && miss.length() > 0.01) {
-        k.root.position.add(miss.multiplyScalar(w)); k.root.updateMatrixWorld(true);
+        miss.y = 0; k.root.position.add(miss.multiplyScalar(w)); k.root.updateMatrixWorld(true);   // 水平だけ寄せる（高さまで動かすと体が浮いた＝アストラ）
         legFix.push(miss.length());
         one(lead);
       }
@@ -6360,9 +6506,22 @@ var R3 = (() => {
     const gT = p.glove || (p.pose === "catcher" ? [p.at[0] + p.face[0] * 0.42, 0.55, p.at[1] + p.face[1] * 0.42] : null);
     if (gT && up && lo && hand) {
       const tgt = v3(gT);
+      // ★3Dの腕は骨格より約10cm短い（上腕0.195＋前腕0.189 vs 0.255＋0.225）。地面のゴロへ届かず、グローブが膝の高さで
+      //   止まっとった（とと 2026-10-17「グローブが変」）。届かん分だけ体を球の方へ沈めて、脚は骨格の足首へ届かせ直す（膝が深く曲がる）
+      if (p.glove) {
+        const sh0 = wp(up), wantW = tgt.clone().sub(tgt.clone().sub(sh0).normalize().multiplyScalar(0.11));
+        const L = wp(up).distanceTo(wp(lo)) + wp(lo).distanceTo(wp(hand)) - 0.01, miss = wantW.distanceTo(sh0) - L;
+        if (miss > 0.005) {
+          const mv = wantW.clone().sub(sh0).normalize().multiplyScalar(Math.min(0.3, miss));
+          const pelY = B.pelvis ? wp(B.pelvis).y : 1;
+          if (pelY + mv.y < 0.28) mv.y = Math.min(0, 0.28 - pelY);   // 腰は地面から0.28mより下げん
+          k.root.position.add(mv); k.root.updateMatrixWorld(true);
+          if (p.skel) footToSkel(k, p.skel, 1, null);
+        }
+      }
       const sh = wp(up), dir = tgt.clone().sub(sh).normalize();
       const side = new THREE.Vector3(Math.cos(ang), 0, -Math.sin(ang)).multiplyScalar(p.lefty ? -1 : 1);  // 本人の左
-      reach(up, lo, hand, tgt.clone().sub(dir.multiplyScalar(0.09)), side.add(new THREE.Vector3(0, -0.6, 0)));
+      reach(up, lo, hand, tgt.clone().sub(dir.multiplyScalar(0.11)), side.add(new THREE.Vector3(0, -0.6, 0)));   // ポケットの中心は手首から約0.11m（makeGlove）
       gw = tgt;
     } else if (hand) gw = wp(hand);
     // 打者：両手でバットの柄を握る
@@ -6424,21 +6583,41 @@ var R3 = (() => {
       // グラブ（守備だけ）。持っとる時は白い玉を手前に見せる
       const gl = items.filter((g) => g.kind === "glove" && g.of === it.id)[0] || (p.pose === "catcher" ? { has: false } : null);
       if (gl && gw) {
+        const hand = k.bones.hand_l, fore = k.bones.lowerarm_l;
+        if (!hand || !fore) return;
+        const wrist = wp(hand), elbow = wp(fore);
+        const flying = items.find(x => x.kind === "ball" && x.w);
+        const aim = !gl.has && flying ? v3(flying.w)
+          : p.look ? v3(p.look) : null;
+        const forward = v3([p.face[0], 0, p.face[1]]);
+        const q = gloveFrame(wrist, elbow, aim, forward);
+        if (!q) return;
+
         let gm = gloves[gi];
-        if (!gm) { gm = gloves[gi] = { g: new THREE.Mesh(gloveGeo, gloveMat), b: new THREE.Mesh(gloveGeo, heldMat) }; scene.add(gm.g); scene.add(gm.b); }
+        if (!gm) {
+          const g = new THREE.Group();
+          const field = makeGlove(false), mitt = makeGlove(true);
+          const b = new THREE.Mesh(gloveGeo, heldMat);
+          g.add(field, mitt, b);
+          scene.add(g);
+          gm = gloves[gi] = { g, field, mitt, b };
+        }
         gi++;
-        const gpos = gl.active && gl.w ? v3(gl.w) : gw;
-        const dz = depth([gpos.x, gpos.y, -gpos.z]);
-        const R = minR(0.1, dz, 3, 22);
-        gm.g.visible = true; gm.g.position.copy(gpos); gm.g.scale.set(R, R * 0.85, R);
+        const isMitt = !!(it.actor && it.actor.kind === "catcher");
+        gm.field.visible = !isMitt;
+        gm.mitt.visible = isMitt;
+        gm.g.visible = true;
+        gm.g.position.copy(wrist);
+        gm.g.quaternion.copy(q);
+        gm.g.scale.setScalar(1);
         gm.b.visible = !!gl.has;
         if (gl.has) {
-          const toCam = pos.clone().sub(gpos).normalize().multiplyScalar(R * 0.55);
-          gm.b.position.copy(gpos).add(toCam); gm.b.scale.setScalar(R * 0.5);
+          gm.b.position.copy((isMitt ? gm.mitt : gm.field).userData.ballSeat);
+          gm.b.scale.setScalar(0.0365);
         }
       }
     });
-    for (let i = gi; i < gloves.length; i++) { gloves[i].g.visible = false; gloves[i].b.visible = false; }
+    for (let i = gi; i < gloves.length; i++) gloves[i].g.visible = false;
     // 画面から消えた人は控えに戻して使い回す（場面が変わるたびに作り足すと、使わん人が溜まっていった）
     Object.keys(pool).forEach((k) => {
       if (seen[k]) return;
@@ -6470,7 +6649,7 @@ var R3 = (() => {
     return true;
   };
 
-  return { init, render, paint, project3, legFix, get ready() { return ready; }, get failed() { return failed; } };
+  return { init, render, paint, project3, legFix, get _pool() { return pool; }, get ready() { return ready; }, get failed() { return failed; } };
 })();
 if (typeof module !== "undefined") module.exports = R3;
 
