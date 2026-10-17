@@ -58,6 +58,15 @@ button[disabled] { opacity: .45; cursor: default; }
 .head .tool { background: rgba(255,255,255,.14); color: #fff; border: none; border-radius: 999px;
   padding: 7px 12px; font-size: .8rem; font-weight: 700; min-height: 36px; }
 .head .tool.off { opacity: .5; }
+/* ボタンの文字は折り返さん（言葉の切り替えを足して4つ並ぶと、スマホ幅で「ゾーン 入」が3行に割れた） */
+.head h1, .head .back, .head .tool { white-space: nowrap; }
+@media (max-width: 420px) {
+  .head { padding: 14px 10px; gap: 6px; }
+  .head h1 { font-size: 1.05rem; letter-spacing: .04em; }
+  .head .back { padding: 7px 10px; font-size: .78rem; }
+  .head .tools { gap: 4px; }
+  .head .tool { padding: 6px 8px; font-size: .72rem; min-height: 34px; }
+}
 
 .wrap { padding: var(--s3); }
 .lead { font-size: .95rem; font-weight: 700; letter-spacing: .04em; margin-bottom: var(--s2); }
@@ -67,6 +76,11 @@ button[disabled] { opacity: .45; cursor: default; }
 .stage { background: #0f2e1c; border-radius: var(--r-card); overflow: hidden; margin-bottom: var(--s2);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 12px 28px rgba(18,55,34,.28); }
 .scene { width: 100%; height: auto; display: block; }
+.stage { position: relative; }
+/* 右上の塁の図（とと 2026-10-17「塁のどこに入っとるかが見えるように、画面の右上に」） */
+.bases { position: absolute; top: 8px; right: 8px; width: 23%; max-width: 104px; min-width: 70px; pointer-events: none;
+  background: rgba(15,46,28,.72); border-radius: 10px; padding: 4px 4px 2px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.bases svg { display: block; width: 100%; height: auto; }
 .sit { background: linear-gradient(180deg, #1f5c39, #17482c); color: #fff; border-radius: var(--r-btn);
   padding: 10px var(--s3); font-weight: 800; letter-spacing: .03em; margin-bottom: var(--s2);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,215,94,.22); font-size: .95rem; }
@@ -172,6 +186,7 @@ button[disabled] { opacity: .45; cursor: default; }
   <div class="tools">
     <button class="tool" id="btnSound" title="音">🔊 音</button>
     <button class="tool" id="btnZone" title="ストライクゾーンの四角">▢ ゾーン 入</button>
+    <button class="tool" id="btnWords" title="言葉（かんたん／専門）">かんたん</button>
   </div>
 </div>
 
@@ -206,7 +221,7 @@ button[disabled] { opacity: .45; cursor: default; }
 <!-- ===== みる: 再生 ===== -->
 <div class="wrap" id="scPlay" style="display:none">
   <div class="sit" id="playSit"></div>
-  <div class="stage"><div id="playField"></div></div>
+  <div class="stage"><div id="playField"></div><div class="bases" id="playBases"></div></div>
   <div class="playing" id="playState"></div>
   <button class="bigbtn primary" id="btnReplay" style="width:100%;justify-content:center;margin-bottom:16px">▶ もう一度（実速→スロー）</button>
   <div class="info"><div class="ttl">コール</div><div class="body" id="playCall"></div></div>
@@ -219,7 +234,7 @@ button[disabled] { opacity: .45; cursor: default; }
   <div class="qhead"><span id="qCount"></span><span id="qScore"></span></div>
   <div class="sit" id="qSit"></div>
   <div class="ask" id="qAsk"></div>
-  <div class="stage"><div id="qField"></div></div>
+  <div class="stage"><div id="qField"></div><div class="bases" id="qBases"></div></div>
   <div class="playing" id="qState"></div>
   <div id="qActions"></div>
   <div id="qFeedback" style="display:none"></div>
@@ -4629,6 +4644,7 @@ var W = (() => {
     base: 23,        // 塁間（学童野球）
     mound: 16,       // 本塁から投手板まで
     baseSize: 0.38,  // ベース1辺
+    baseH: 0.065,    // ベースの厚さ（少年野球の塁は5〜8cm。2026-10-17 とと「塁に厚みを出したい」）
     plateW: 0.432,   // ホームベースの幅
     ballR: 0.036,    // ボールの半径
     kidH: 1.45       // 子どもの身長（打者・走者・野手）
@@ -4823,20 +4839,23 @@ var FIG = (() => {
   //   h＝骨盤の高さを直接決める（スライディング。足首で地面に合わせると腰が浮いた）
   // ★表の値は 2026-10-17 に差し替えた（とと「野球の動作が下手すぎる」→ 動作ごとに Sonnet のエージェントを出して
   //   コーチング資料から正しい形を調べさせた。報告＝調査_動作の形\01〜09）。多くはエージェントが定義から計算した推定値。
-  const P = (tau, psi, lL, rL, lA, rA, yaw, h) => ({ tau, psi, lL, rL, lA, rA, yaw: yaw || 0, h: h == null ? null : h });
+  //   脚の4つ目＝すねの面φs（省略＝太ももと同じ）。★とと 2026-10-17「がに股がかっこ悪い」：太ももとすねを同じ面で
+  //   外へ開くと膝が足より外へ出る。すねを面0（まっすぐ前後）にすると膝が足の真上に来て、足幅はそのまま肩幅になる
+  const LEG4 = (l) => l.length > 3 ? l : [l[0], l[1], l[2], l[2]];
+  const P = (tau, psi, lL, rL, lA, rA, yaw, h) => ({ tau, psi, lL: LEG4(lL), rL: LEG4(rL), lA, rA, yaw: yaw || 0, h: h == null ? null : h });
   // 内野手の構え（06 A）：膝を曲げて腰を落とし、手は体の前に低く（前は棒立ち・手が胸の高さやった）
-  const READY = P(30, 0, [42, 70, -42], [42, 70, 42], [42, -4, 30], [42, 4, 30]);   // 膝は報告の60°より少し深く（骨盤0.64m）
+  const READY = P(30, 0, [42, 70, -24, 0], [42, 70, 24, 0], [42, -4, 30], [42, 4, 30]);   // 膝は報告の60°より少し深く（骨盤0.64m）
   // ゴロ：左足を出しながら沈む（06 C3）／捕球の瞬間（06 D：お尻を膝の高さへ・左足が前・グラブは体の前の地面）
-  const LOW = P(50, 0, [62, 72, -14], [64, 100, 16], [70, -4, 22], [70, 6, 32]);
-  const DEEP = P(55, 0, [75, 110, -30], [60, 116, 30], [80, 8, 5], [54, -16, 60]);
+  const LOW = P(50, 0, [62, 72, -14, 0], [64, 100, 16, 0], [70, -4, 22], [70, 6, 32]);
+  const DEEP = P(55, 0, [75, 110, -22, -4], [60, 116, 22, 4], [80, 8, 5], [54, -16, 60]);
   // 頭の上・顔の前のフライ（03 A 捕球）：少し反って、グラブ側の左足が前
   const HIGH = P(-5, -8, [20, 25, 0], [-12, 20, 0], [150, 28, 15], [148, -28, 18]);
   // 捕手（08 A 走者なし）：太ももほぼ水平・足は肩幅より広く・素手は体の後ろ（前は素手が前に出とった）
   const CATCH = P(40, 0, [85, 125, -35], [85, 125, 35], [77, -5, 73], [0, 35, 25]);
   // 打者（07）：構え／踏み込み（投手のリリースの手前で着地）／見送った後。腕はバットの握りに合わせて別に曲げる
-  const BAT = P(20, -5, [26, 33, -60], [29, 37, 60], [45, 35, 85], [45, 70, 100]);
-  const BAT_STRIDE = P(20, 2, [30, 30, -68], [31, 42, 60], [45, 35, 85], [45, 70, 100]);
-  const BAT_TAKE = P(14, 0, [28, 24, -66], [25, 20, 58], [45, 35, 85], [45, 70, 100]);
+  const BAT = P(20, -5, [26, 33, -60, -20], [29, 37, 60, 20], [45, 35, 85], [45, 70, 100]);
+  const BAT_STRIDE = P(20, 2, [30, 30, -68, -25], [31, 42, 60, 20], [45, 35, 85], [45, 70, 100]);
+  const BAT_TAKE = P(14, 0, [28, 24, -66, -25], [25, 20, 58, 20], [45, 35, 85], [45, 70, 100]);
   // 走る（09）：1歩（左足着地→右足着地）。接地0〜0.6・空中0.6〜1.0。遊脚はかかとをお尻の下まで畳んで振り上げる。
   //   腕は前で曲げて手が頬の高さ、後ろで開いて腰の後ろへ（前は肘が固定で歩きに見えた）
   const RUN_AT = [0, 0.15, 0.3, 0.45, 0.6, 0.68, 0.75, 0.9];
@@ -4853,7 +4872,7 @@ var FIG = (() => {
   // 左右を入れ替えた姿勢（次の1歩・左打者）
   const mirror = (p) => ({
     tau: p.tau, psi: -p.psi, yaw: -(p.yaw || 0), h: p.h,
-    lL: [p.rL[0], p.rL[1], -p.rL[2]], rL: [p.lL[0], p.lL[1], -p.lL[2]],
+    lL: [p.rL[0], p.rL[1], -p.rL[2], -p.rL[3]], rL: [p.lL[0], p.lL[1], -p.lL[2], -p.lL[3]],
     lA: [p.rA[0], -p.rA[1], p.rA[2]], rA: [p.lA[0], -p.lA[1], p.lA[2]]
   });
   // 2歩で1周。キーの位相が等間隔でないので、位相の表と一緒に持つ
@@ -4894,8 +4913,8 @@ var FIG = (() => {
     P(-46, 0, [88, 8, 0], [88, 160, 60], [30, -40, 80], [30, 40, 80], 0, 0.15)] };
   // 一塁手のフォース捕球（01）。時刻は捕球からの秒。右足をベースに固定し、送球が来ると見えたらグラブ側の左足を踏み出して伸びる
   const STRETCH = { at: [-1.0, -0.4, -0.30, -0.15, 0, 0.15, 0.3], p: [
-    P(18, 0, [28, 28, -50], [28, 28, 50], [75, -10, 70], [70, 15, 80]),
-    P(18, 0, [28, 28, -50], [28, 28, 50], [75, -10, 70], [70, 15, 80]),
+    P(18, 0, [28, 28, -36, 0], [28, 28, 36, 0], [75, -10, 70], [70, 15, 80]),
+    P(18, 0, [28, 28, -36, 0], [28, 28, 36, 0], [75, -10, 70], [70, 15, 80]),
     P(20, -4, [34, 26, -3], [4, 22, 3], [100, 0, 35], [85, -5, 70]),
     P(21, -6, [44, 22, -4], [-18, 16, 4], [112, 0, 15], [90, -8, 70]),
     P(20, -10, [50, 20, -4], [-35, 12, 4], [116, 0, 5], [95, -12, 70]),
@@ -4999,7 +5018,7 @@ var FIG = (() => {
     const leg = (side, ang) => {
       const hip = add(base, mul(R, side * S.hip));
       const knee = add(hip, mul(Dir(fr, ang[0], ang[2]), S.thigh));
-      const ank = add(knee, mul(Dir(fr, ang[0] - ang[1], ang[2]), S.shin));
+      const ank = add(knee, mul(Dir(fr, ang[0] - ang[1], ang[3] == null ? ang[2] : ang[3]), S.shin));
       return { hip: hip, knee: knee, ank: ank };
     };
     const lg = { L: leg(-1, p.lL), R: leg(1, p.rL) };
@@ -5606,9 +5625,22 @@ var V = (() => {
     });
 
     // ベースとホーム
+    // ★塁は厚さ6.5cmの箱（とと 2026-10-17「塁に厚みを出したい・立体的に」：ペタンコやと、スライディングの足が塁に当たるのが分からん）。
+    //   カメラから見える側面だけ少し暗い色で描いてから、上面を白で描く。本塁は地面と同じ高さなので平らのまま
+    const BH = W.DIM.baseH, hs = W.DIM.baseSize / 2;
     [W.BASES.first, W.BASES.second, W.BASES.third].forEach((b) => {
-      const p = poly(cam, squarePts(b, W.DIM.baseSize), Wp, Hp);
-      if (p) items.push({ kind: "base", pts: p });
+      const c = (dx, y, dz) => [b[0] + dx, y, b[2] + dz];
+      const top = poly(cam, [c(-hs, BH, -hs), c(hs, BH, -hs), c(hs, BH, hs), c(-hs, BH, hs)], Wp, Hp);
+      if (!top) return;
+      const sides = [];
+      [[[-hs, -hs], [hs, -hs], [0, -1]], [[hs, -hs], [hs, hs], [1, 0]], [[hs, hs], [-hs, hs], [0, 1]], [[-hs, hs], [-hs, -hs], [-1, 0]]].forEach((e) => {
+        const mid = [b[0] + (e[0][0] + e[1][0]) / 2, BH / 2, b[2] + (e[0][1] + e[1][1]) / 2];
+        const toC = [cam.pos[0] - mid[0], cam.pos[2] - mid[2]];
+        if (toC[0] * e[2][0] + toC[1] * e[2][1] <= 0) return;            // 裏側の面は描かん
+        const q = poly(cam, [c(e[0][0], 0, e[0][1]), c(e[1][0], 0, e[1][1]), c(e[1][0], BH, e[1][1]), c(e[0][0], BH, e[0][1])], Wp, Hp);
+        if (q) sides.push(q);
+      });
+      items.push({ kind: "base", pts: top, sides: sides, at: b });
     });
     const pp = poly(cam, platePts(), Wp, Hp);
     if (pp) items.push({ kind: "plate", pts: pp });
@@ -5879,7 +5911,8 @@ var V = (() => {
         case "ground":s += '<rect x="0" y="' + Math.max(0, i.y).toFixed(1) + '" width="' + Wp + '" height="' + Hp + '" fill="' + COL.grass + '"/>'; break;
         case "dirt":  s += '<polygon points="' + ptsStr(i.pts) + '" fill="' + COL.dirt + '"/>'; break;
         case "line":  s += '<polygon points="' + ptsStr(i.pts) + '" fill="' + COL.line + '"/>'; break;
-        case "base":  s += '<polygon points="' + ptsStr(i.pts) + '" fill="' + COL.white + '"/>'; break;
+        case "base":  (i.sides || []).forEach((q) => { s += '<polygon points="' + ptsStr(q) + '" fill="#cfccc2" stroke="#b9b5a8" stroke-width="0.6"/>'; });
+                      s += '<polygon points="' + ptsStr(i.pts) + '" fill="' + COL.white + '" stroke="#d8d5cb" stroke-width="0.6"/>'; break;
         case "plate": s += '<polygon points="' + ptsStr(i.pts) + '" fill="' + COL.white + '"/>'; break;
         case "shadow":s += '<ellipse cx="' + i.cx.toFixed(1) + '" cy="' + i.cy.toFixed(1) + '" rx="' + i.rx.toFixed(1) + '" ry="' + i.ry.toFixed(1)
                         + '" fill="#000" opacity="' + (i.soft ? 0.16 : 0.24) + '"/>'; break;
@@ -6027,6 +6060,13 @@ var R3 = (() => {
       makeCamera();
       ballMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }));
       scene.add(ballMesh);
+      // 塁：3Dの白い箱（スライディングの足が塁の横に当たる所が、選手との前後関係も正しく見える）
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.7 });
+      [W.BASES.first, W.BASES.second, W.BASES.third].forEach((b) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(W.DIM.baseSize, W.DIM.baseH, W.DIM.baseSize), baseMat);
+        m.position.copy(v3([b[0], W.DIM.baseH / 2, b[2]]));
+        scene.add(m);
+      });
       gloveGeo = new THREE.SphereGeometry(1, 16, 12);
       gloveMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.8 });
       heldMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
@@ -6270,7 +6310,8 @@ var R3 = (() => {
       host.innerHTML = '<div class="stack3d" style="position:relative"><div class="b"></div><div class="c" style="position:absolute;inset:0"></div><div class="f"></div></div>';
       box = host.querySelector(".stack3d");
     }
-    box.querySelector(".b").innerHTML = V.svg(items, Wp, Hp, "back");
+    // 3Dの時は塁を3Dの箱で描くので、下の絵からは外す
+    box.querySelector(".b").innerHTML = V.svg(items.filter((i) => i.kind !== "base"), Wp, Hp, "back");
     const cv = render(items, sc);
     const slot = box.querySelector(".c");
     if (cv.parentNode !== slot) { cv.style.width = "100%"; cv.style.height = "100%"; cv.style.display = "block"; slot.appendChild(cv); }
@@ -6281,6 +6322,74 @@ var R3 = (() => {
   return { init, render, paint, project3, get ready() { return ready; }, get failed() { return failed; } };
 })();
 if (typeof module !== "undefined") module.exports = R3;
+
+</script>
+<script>
+// words.js — 画面の言葉を「かんたん」と「専門」で切り替える（純関数・DOM禁止）
+//
+// 【なぜ】とと 2026-10-17「併殺っていうのはゲッツーのことだと思うんだけど、わからんので言葉を切り替えてほしい。
+//   簡単なワードのモードと、専門用語を使うモードが欲しい」「野球に詳しくなくてね。だからこそのアプリ」。
+//   既定は「かんたん」（野球に詳しくないお父さんが最初に触るため）。
+// 【約束】ジャッジでは題名を出さず、場面の ask（答えがばれん言い方）を出す（題名で答えがばれとった）。
+//   タッチが要るかどうかも審判の仕事なので、ジャッジ中のヒントは出さず、答えた後の解説で説明する（とと 2026-10-17）。
+var WD = (() => {
+  // かんたんモードでの言い換え（長い語から先に置き換える）
+  const EASY = [
+    ["離塁が早い", "走り出しが早い"], ["離塁", "走り出し"], ["タッチアップ", "フライが捕られてからのスタート"],
+    ["併殺", "ゲッツー（1回で2人アウト）"], ["走者", "ランナー"], ["飛球", "フライ"], ["単打", "ヒット"],
+    ["空タッチ", "タッチが届いていない"], ["触塁", "塁にふれること"], ["僅差", "ぎりぎり"],
+    ["直球", "まっすぐ"], ["外角", "外側"], ["内角", "内側"], ["本塁", "ホーム"],
+    ["無死", "アウト0"], ["一死", "アウト1"], ["二死", "アウト2"]
+  ];
+  const text = (s, mode) => {
+    if (mode !== "easy" || !s) return s;
+    let out = String(s);
+    EASY.forEach((r) => { out = out.split(r[0]).join(r[1]); });
+    return out;
+  };
+
+  // コールのボタンの言葉
+  const CALLS_EASY = { tagup: ["走り出しOK", "走り出しが早い"], catch: ["捕った", "落とした"] };
+  const calls = (q, base, mode) => (mode === "easy" && CALLS_EASY[q]) ? CALLS_EASY[q] : base;
+
+  // 問いかけ
+  const ASK = {
+    pro:  { pitch: "ストライクか、ボールか。", fairfoul: "フェアか、ファウルか。", tagup: "離塁は正当か、早いか。",
+            catch: "捕球か、落球か。", outsafe: "アウトか、セーフか。" },
+    easy: { pitch: "ストライクか、ボールか。", fairfoul: "フェアか、ファウルか。", tagup: "走り出しはOKか、早いか。",
+            catch: "ちゃんと捕ったか、落としたか。", outsafe: "アウトか、セーフか。" }
+  };
+  const ask = (q, mode) => ASK[mode === "easy" ? "easy" : "pro"][q] || ASK.pro.outsafe;
+
+  // 状況の帯：ランナー・アウト・起きたこと。ジャッジ（quiz）では題名の代わりに ask を出す
+  const sit = (sc, mode, quiz) => {
+    const easy = mode === "easy";
+    const r = (sc.situation && sc.situation.runners) || [];
+    const run = r.length ? (easy ? "ランナー " : "走者 ") + r.map((x) => x + "塁").join("・") : (easy ? "ランナーなし" : "走者なし");
+    const o = sc.situation ? sc.situation.outs : 0;
+    const outs = easy ? "アウト" + o : (o === 0 ? "無死" : o + "死");
+    const what = quiz && sc.ask ? sc.ask[easy ? "easy" : "pro"] : text(sc.title, mode);
+    return run + "・" + outs + "・" + what;
+  };
+
+  // 答えた後の解説に足す一文：フォースか、タッチが要るか（アウト／セーフの場面だけ）
+  const playKind = (sc, mode) => {
+    if (sc.q !== "outsafe" || !sc.play) return "";
+    if (mode === "easy")
+      return sc.play === "force"
+        ? "このランナーは次の塁へ進むしかない（押し出されている）ので、ボールを持って塁を踏めばアウトです。タッチはいりません。"
+        : "このランナーは押し出されていないので、アウトにするにはボールを持ったグラブでタッチする必要があります。";
+    return sc.play === "force" ? "フォースプレー（塁を踏めばアウト・タッチ不要）。" : "タッチプレー（タッチが必要）。";
+  };
+
+  // ジャッジで出す言い方に、答えにつながる言葉が入っとらんか（リント用）
+  const LEAK = ["空振り", "遅れ", "離れ", "踏まず", "かわす", "外れ", "ど真ん中", "早い", "僅差", "ぎりぎり",
+                "すれすれ", "ワンバウンド", "越え", "止まる", "手前", "セーフ", "ストライク", "ボール球", "落球", "捕球"];
+  const leaks = (s) => LEAK.filter((w) => String(s).indexOf(w) >= 0);
+
+  return { text, calls, ask, sit, playKind, leaks, EASY };
+})();
+if (typeof module !== "undefined") module.exports = WD;
 
 </script>
 <script>
@@ -6686,6 +6795,8 @@ if (typeof module !== "undefined") module.exports = E;
 //           ground{t,at:[x,z]} / settle{t,at:[x,z]} / overrun{turned:"fair"|"foul"}
 //   watch : 見るポイント（教科書の一言）
 //   why   : なぜその判定になるか
+//   ask   : { easy, pro } ジャッジで題名の代わりに出す言い方（2026-10-17 とと：題名で答えがばれとった・
+//           かんたん／専門の2通り）。答えにつながる言葉（空振り・遅れ・離れ・踏まず・外れ等）は書かん＝リントが落とす
 //
 // 【際どさの目安】アウト/セーフ＝基本0.25秒以上・応用0.15秒以下／フェア/ファウル＝基本0.6m以上・応用0.2m以下
 //   ／離塁＝基本0.3秒以上・応用0.12秒以下／捕球＝基本0.4m以上・応用0.12m以下／投球＝基本8cm以上・応用4cm以下
@@ -6698,6 +6809,7 @@ var SCENES = [
   {
     id: "U1-01", role: "U1", level: "基本", q: "outsafe", play: "force",
     title: "内野ゴロ・一塁フォース",
+    ask:   { easy: "内野ゴロ。打った人が一塁へ走る", pro: "内野ゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.60, 23.05, -0.30], [4.4, 27.5, -0.6]] },
@@ -6721,6 +6833,7 @@ var SCENES = [
   {
     id: "U3-02", role: "U3", level: "基本", q: "fairfoul", line: "3B",
     title: "三塁線のゴロ・ベースを越えて着地",
+    ask:   { easy: "三塁線の近くにゴロ", pro: "三塁線際のゴロ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     cam: { pos: [-2.5, 1.5, 31.0], at: [-1.2, 0.15, 26.0] },   // 打球を追って線の外へ出た位置
     actors: [
@@ -6742,6 +6855,7 @@ var SCENES = [
   {
     id: "U3-03", role: "U3", level: "基本", q: "tagup",
     title: "レフトフライ・三塁走者のタッチアップ",
+    ask:   { easy: "レフトフライ。三塁ランナーはフライが捕られてから走る", pro: "レフトフライ・三塁走者のタッチアップ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["3"], outs: 1 },
     cam: { pos: [-2.5, 1.5, 19.0], at: [2.0, 0.6, 27.0] },     // 三塁とレフトが一緒に見える位置
     actors: [
@@ -6765,6 +6879,7 @@ var SCENES = [
   {
     id: "U3-07", role: "U3", level: "応用", q: "catch",
     title: "レフト前の浅い飛球・すれすれの捕球",
+    ask:   { easy: "レフト前に浅いフライ", pro: "レフト前の浅い飛球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     cam: { pos: [6.5, 1.5, 24.0], at: [2.2, 0.4, 30.0] },      // 打球の線の真上でなく、横から見る位置
     actors: [
@@ -6786,6 +6901,7 @@ var SCENES = [
   {
     id: "PU-07", role: "PU", level: "基本", q: "pitch",
     title: "ど真ん中の直球",
+    ask:   { easy: "ピッチャーが投げる（まっすぐ）", pro: "直球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [],
     pitch: { cross: [0, 0.72], kind: "straight", speed: 85, batter: { h: 1.45, side: "R" } },
@@ -6800,6 +6916,7 @@ var SCENES = [
   {
     id: "U1-02", role: "U1", level: "基本", q: "outsafe", play: "force",
     title: "深いゴロ・一塁フォース",
+    ask:   { easy: "深い所への内野ゴロ。打った人が一塁へ走る", pro: "深いゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.30, 23.05, -0.30], [4.2, 27.0, -0.6]] },
@@ -6822,6 +6939,7 @@ var SCENES = [
   {
     id: "U1-03", role: "U1", level: "基本", q: "fairfoul", line: "1B",
     title: "一塁線のゴロ・ベース手前で止まる",
+    ask:   { easy: "一塁線の近くにゴロ", pro: "一塁線際のゴロ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     cam: { pos: [22.0, 1.5, -2.6], at: [12.0, 0.15, -0.6] },
     actors: [
@@ -6843,6 +6961,7 @@ var SCENES = [
   {
     id: "U1-04", role: "U1", level: "応用", q: "outsafe", play: "force",
     title: "一塁フォース・僅差",
+    ask:   { easy: "内野ゴロ。打った人が一塁へ走る", pro: "内野ゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.50, 23.05, -0.30], [4.3, 27.0, -0.6]] },
@@ -6866,6 +6985,7 @@ var SCENES = [
   {
     id: "U1-05", role: "U1", level: "応用", q: "outsafe", play: "force",
     title: "捕球は早いが、一塁手の足が離れる",
+    ask:   { easy: "内野ゴロ。打った人が一塁へ走る", pro: "内野ゴロ・一塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [3.45, 23.05, -0.30], [4.3, 27.0, -0.6]] },
@@ -6889,6 +7009,7 @@ var SCENES = [
   {
     id: "U1-06", role: "U1", level: "応用", q: "outsafe", play: "tag",
     title: "駆け抜けた後、二塁へ向かってタッチ",
+    ask:   { easy: "内野ゴロ。打った人が一塁を走り抜けた後のプレー", pro: "一塁駆け抜け後のプレー" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     cam: { pos: [26.5, 1.5, -3.0], at: [25.0, 0.6, 1.0] },     // 駆け抜けた先まで見える位置
     actors: [
@@ -6912,6 +7033,7 @@ var SCENES = [
   {
     id: "U1-07", role: "U1", level: "応用", q: "catch",
     title: "ライト前の浅い飛球・ワンバウンド",
+    ask:   { easy: "ライト前に浅いフライ", pro: "ライト前の浅い飛球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     cam: { pos: [22.0, 1.5, -1.0], at: [26.0, 0.3, 4.0] },     // 打球の線の真上でなく、横から見る位置
     actors: [
@@ -6933,6 +7055,7 @@ var SCENES = [
   {
     id: "U2-01", role: "U2", level: "基本", q: "outsafe", play: "tag",
     title: "二塁への盗塁・タッチ",
+    ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.80, 23.0, 21.6], [3.30, 23.0, 22.9]] },
@@ -6955,6 +7078,7 @@ var SCENES = [
   {
     id: "U2-02", role: "U2", level: "基本", q: "outsafe", play: "tag",
     title: "二塁への盗塁・送球が遅れる",
+    ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.80, 23.0, 22.9], [3.4, 23.0, 23.2]] },
@@ -6977,6 +7101,7 @@ var SCENES = [
   {
     id: "U2-03", role: "U2", level: "基本", q: "outsafe", play: "force",
     title: "併殺の二塁フォース",
+    ask:   { easy: "内野ゴロ。ゲッツー（1回で2人アウト）をねらって二塁へ投げる", pro: "内野ゴロ・併殺狙いの二塁送球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.80, 23.0, 22.85], [3.4, 22.0, 23.6]] },
@@ -6999,6 +7124,7 @@ var SCENES = [
   {
     id: "U2-04", role: "U2", level: "応用", q: "outsafe", play: "tag",
     title: "二塁のタッチ・僅差",
+    ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.90, 23.0, 22.0], [3.12, 23.0, 22.9]] },
@@ -7021,6 +7147,7 @@ var SCENES = [
   {
     id: "U2-05", role: "U2", level: "応用", q: "outsafe", play: "tag",
     title: "送球は早いが、タッチが空振り",
+    ask:   { easy: "一塁ランナーが二塁へ走る（盗塁）", pro: "盗塁" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [2.90, 23.0, 22.2], [3.10, 23.0, 22.9]] },
@@ -7042,6 +7169,7 @@ var SCENES = [
   {
     id: "U2-06", role: "U2", level: "応用", q: "tagup",
     title: "センターフライ・二塁走者のタッチアップ",
+    ask:   { easy: "センターフライ。二塁ランナーはフライが捕られてから走る", pro: "センターフライ・二塁走者のタッチアップ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 1 },
     cam: { pos: [18.5, 1.5, 21.5], at: [23.5, 0.6, 24.5] },    // 二塁とセンターが一緒に見える位置。
     //   前は走者と野手が同じ方向に重なり、捕球の瞬間に野手が走者の陰へ完全に隠れとった（内野側へずらして分けた）
@@ -7065,6 +7193,7 @@ var SCENES = [
   {
     id: "U3-01", role: "U3", level: "基本", q: "outsafe", play: "tag",
     title: "一塁走者が三塁へ・タッチ",
+    ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.80, 1.0, 22.6], [4.30, 0.15, 22.85]] },
@@ -7087,6 +7216,7 @@ var SCENES = [
   {
     id: "U3-04", role: "U3", level: "応用", q: "outsafe", play: "tag",
     title: "三塁のタッチ・僅差",
+    ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 1 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.30, 0.15, 22.85], [3.9, 0.1, 22.6]] },
@@ -7109,6 +7239,7 @@ var SCENES = [
   {
     id: "U3-05", role: "U3", level: "応用", q: "tagup",
     title: "レフトフライ・離塁が僅かに早い",
+    ask:   { easy: "レフトフライ。三塁ランナーはフライが捕られてから走る", pro: "レフトフライ・三塁走者のタッチアップ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["3"], outs: 1 },
     cam: { pos: [-2.5, 1.5, 19.0], at: [2.0, 0.6, 27.0] },     // 三塁とレフトが一緒に見える位置
     actors: [
@@ -7131,6 +7262,7 @@ var SCENES = [
   {
     id: "U3-06", role: "U3", level: "応用", q: "outsafe", play: "tag",
     title: "スライディングでタッチをかわす",
+    ask:   { easy: "ヒット。一塁ランナーが三塁まで走る", pro: "単打・一塁走者が三塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "R1", kind: "runner",  keys: [[0, 23.0, 0.3], [1.9, 23.0, 23.0], [3.10, 0.9, 22.3], [3.30, 0.15, 22.85]] },
@@ -7153,6 +7285,7 @@ var SCENES = [
   {
     id: "PU-01", role: "PU", level: "基本", q: "outsafe", play: "tag",
     title: "本塁のクロスプレー",
+    ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 1 },
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.40, 1.2, 1.2], [4.80, 0.12, 0.12]] },
@@ -7175,6 +7308,7 @@ var SCENES = [
   {
     id: "PU-02", role: "PU", level: "基本", q: "outsafe", play: "tag",
     title: "本塁のクロスプレー・送球が遅れる",
+    ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 0 },
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.30, 0.12, 0.12], [4.90, -0.6, -0.6]] },
@@ -7197,6 +7331,7 @@ var SCENES = [
   {
     id: "PU-03", role: "PU", level: "基本", q: "fairfoul", line: "3B",
     title: "バント・三塁線に止まる",
+    ask:   { easy: "バント", pro: "バント" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["1"], outs: 0 },
     actors: [
       { id: "B",  kind: "runner",  keys: [[0.15, 0.5, -0.35], [2.4, 12.0, -0.3]] },
@@ -7218,6 +7353,7 @@ var SCENES = [
   {
     id: "PU-04", role: "PU", level: "応用", q: "outsafe", play: "tag",
     title: "本塁のクロスプレー・僅差",
+    ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 1 },
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.52, 0.75, 0.75], [4.60, 0.12, 0.12]] },
@@ -7241,6 +7377,7 @@ var SCENES = [
   {
     id: "PU-05", role: "PU", level: "応用", q: "outsafe", play: "tag",
     title: "走者が本塁を踏まずに走り抜ける",
+    ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 1 },
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.60, 0.5, -0.9], [5.00, -0.3, -1.6]] },
@@ -7262,6 +7399,7 @@ var SCENES = [
   {
     id: "PU-06", role: "PU", level: "応用", q: "outsafe", play: "tag",
     title: "本塁のタッチが空振り",
+    ask:   { easy: "ヒット。二塁ランナーがホームへ走る", pro: "単打・二塁走者が本塁へ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: ["2"], outs: 0 },
     actors: [
       { id: "R2", kind: "runner",  keys: [[0, 23.0, 23.0], [4.40, 0.9, 0.9], [4.60, 0.12, 0.12]] },
@@ -7284,6 +7422,7 @@ var SCENES = [
   {
     id: "PU-08", role: "PU", level: "基本", q: "pitch",
     title: "高めに大きく外れる直球",
+    ask:   { easy: "ピッチャーが投げる（まっすぐ）", pro: "直球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [],
     pitch: { cross: [0.05, 1.30], kind: "straight", speed: 85, batter: { h: 1.45, side: "R" } },
@@ -7297,6 +7436,7 @@ var SCENES = [
   {
     id: "PU-09", role: "PU", level: "基本", q: "pitch",
     title: "外角に大きく外れる直球",
+    ask:   { easy: "ピッチャーが投げる（まっすぐ）", pro: "直球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [],
     pitch: { cross: [0.42, 0.70], kind: "straight", speed: 85, batter: { h: 1.45, side: "R" } },
@@ -7310,6 +7450,7 @@ var SCENES = [
   {
     id: "PU-10", role: "PU", level: "応用", q: "pitch",
     title: "外角低め・すれすれ",
+    ask:   { easy: "ピッチャーが投げる（まっすぐ）", pro: "直球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 1 },
     actors: [],
     pitch: { cross: [0.23, 0.43], kind: "straight", speed: 85, batter: { h: 1.45, side: "R" } },
@@ -7323,6 +7464,7 @@ var SCENES = [
   {
     id: "PU-11", role: "PU", level: "応用", q: "pitch",
     title: "カーブ・低めに落ちる",
+    ask:   { easy: "ピッチャーが投げる（カーブ＝曲がる球）", pro: "カーブ" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 0 },
     actors: [],
     pitch: { cross: [0.05, 0.37], kind: "curve", speed: 78, batter: { h: 1.45, side: "R" } },
@@ -7336,6 +7478,7 @@ var SCENES = [
   {
     id: "PU-12", role: "PU", level: "応用", q: "pitch",
     title: "内角高めの角",
+    ask:   { easy: "ピッチャーが投げる（まっすぐ）", pro: "直球" },   // ジャッジで出す言い方（答えがばれん言葉だけ）
     situation: { runners: [], outs: 2 },
     actors: [],
     pitch: { cross: [-0.22, 1.00], kind: "straight", speed: 85, batter: { h: 1.45, side: "R" } },
@@ -7443,7 +7586,7 @@ if (typeof module !== "undefined") module.exports = { SCENES: SCENES, DUTIES: DU
 <script>
 // ==== 状態 ====
 var KEY = "umpire_drill_v1";
-var App = { role: null, screen: "home", sc: null, progress: E.newProgress(), sound: true, zone: null, quiz: null };
+var App = { role: null, screen: "home", sc: null, progress: E.newProgress(), sound: true, zone: null, quiz: null, words: "easy" };
 
 function $(id) { return document.getElementById(id); }
 function load() {
@@ -7453,11 +7596,12 @@ function load() {
     if (typeof d.role === "string" && E.ROLES.indexOf(d.role) >= 0) App.role = d.role;
     if (typeof d.sound === "boolean") App.sound = d.sound;
     if (typeof d.zone === "boolean") App.zone = d.zone;
+    if (d.words === "easy" || d.words === "pro") App.words = d.words;
     App.progress = E.normalizeProgress(d.progress);
   } catch (e) { /* 壊れていても既定のまま動かす */ }
 }
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify({ role: App.role, sound: App.sound, zone: App.zone, progress: App.progress })); }
+  try { localStorage.setItem(KEY, JSON.stringify({ role: App.role, sound: App.sound, zone: App.zone, words: App.words, progress: App.progress })); }
   catch (e) { toast("記録が保存できませんでした"); }
 }
 var toastTimer = null;
@@ -7509,11 +7653,24 @@ var SIGN_OF = {
 };
 
 // ==== 表示のことば ====
-function sitText(sc) {
-  var r = sc.situation.runners || [];
-  var run = r.length ? "走者 " + r.map(function (x) { return x + "塁"; }).join("・") : "走者なし";
-  var o = sc.situation.outs;
-  return run + "・" + (o === 0 ? "無死" : o + "死") + "・" + sc.title;
+// 状況の帯。ジャッジ（quiz）では題名を出さず、答えがばれん言い方（場面の ask）を出す（題名で答えがばれとった）
+function sitText(sc, quiz) { return WD.sit(sc, App.words, !!quiz); }
+// 右上の塁の図：ランナーがおる塁を印・アウトの数を丸で（ヒントは出さん＝タッチが要るかは回答者が判断する）
+function basesHTML(sc) {
+  var r = (sc.situation && sc.situation.runners) || [], o = (sc.situation && sc.situation.outs) || 0;
+  var P = { "1": [74, 40], "2": [50, 16], "3": [26, 40] };
+  var base = function (k) {
+    var c = P[k], on = r.indexOf(k) >= 0, d = 8;
+    return '<polygon points="' + c[0] + "," + (c[1] - d) + " " + (c[0] + d) + "," + c[1] + " " + c[0] + "," + (c[1] + d) + " " + (c[0] - d) + "," + c[1]
+      + '" fill="' + (on ? "#ffd75e" : "rgba(255,255,255,.18)") + '" stroke="' + (on ? "#ffd75e" : "rgba(255,255,255,.7)") + '" stroke-width="1.5"/>';
+  };
+  var s = '<svg viewBox="0 0 100 92" role="img" aria-label="ランナーとアウトの数">'
+    + '<polygon points="50,16 74,40 50,64 26,40" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.2"/>'
+    + base("2") + base("1") + base("3")
+    + '<polygon points="46,60 54,60 54,64 50,68 46,64" fill="rgba(255,255,255,.85)"/>';
+  for (var i = 0; i < 2; i++)
+    s += '<circle cx="' + (40 + i * 20) + '" cy="82" r="5" fill="' + (i < o ? "#e8604c" : "none") + '" stroke="rgba(255,255,255,.75)" stroke-width="1.4"/>';
+  return s + "</svg>";
 }
 // ★とと 2026-09-08「出す・消す 切り替えスイッチつき」→ 場面の段階で勝手に変えず、
 //   入／切のはっきりした2択にして、今どちらかをヘッダーに出す（既定＝入）
@@ -7610,9 +7767,10 @@ function renderHome() {
   $("btnLearn").disabled = !App.role || myScenes().length === 0;
   $("btnDuty").disabled = !App.role;
   $("btnSound").className = "tool" + (App.sound ? "" : " off");
-  $("btnSound").textContent = App.sound ? "🔊 音 入" : "🔇 音 切";
+  $("btnSound").textContent = App.sound ? "🔊 入" : "🔇 切";
   $("btnZone").className = "tool" + (App.zone === false ? " off" : "");
-  $("btnZone").textContent = App.zone === false ? "▢ ゾーン 切" : "▢ ゾーン 入";
+  $("btnZone").textContent = App.zone === false ? "ゾーン切" : "ゾーン入";
+  $("btnWords").textContent = App.words === "easy" ? "かんたん" : "専門";
 }
 $("homeField").addEventListener("click", function (ev) {
   var g = ev.target.closest ? ev.target.closest(".ump") : null;
@@ -7620,6 +7778,12 @@ $("homeField").addEventListener("click", function (ev) {
   App.role = g.getAttribute("data-role"); save(); renderHome();
 });
 $("btnSound").onclick = function () { App.sound = !App.sound; save(); renderHome(); toast(App.sound ? "音を出します" : "音を止めます"); };
+$("btnWords").onclick = function () {
+  App.words = App.words === "easy" ? "pro" : "easy"; save(); renderHome();
+  toast(App.words === "easy" ? "かんたんな言葉で表示します" : "専門の言葉で表示します");
+  if (App.screen === "list") renderList();
+  if (App.screen === "play") renderPlay();
+};
 $("btnZone").onclick = function () {
   App.zone = (App.zone === false);   // 切 → 入 → 切 の2択
   save(); renderHome(); toast(App.zone === false ? "ストライクゾーンの四角を消します" : "ストライクゾーンの四角を出します");
@@ -7644,7 +7808,7 @@ function renderList() {
     html += '<div class="lvl">' + name + "</div>";
     lv[name].forEach(function (sc) {
       var cleared = App.progress.cleared[App.role].indexOf(sc.id) >= 0;
-      html += '<button class="card" data-id="' + sc.id + '"><span class="t">' + sc.title + "</span>"
+      html += '<button class="card" data-id="' + sc.id + '"><span class="t">' + WD.text(sc.title, App.words) + "</span>"
         + '<span class="qtag">' + QNAME[sc.q] + "</span>"
         + (cleared ? '<span class="chk">✓ 正解</span>' : "") + '<span aria-hidden="true">›</span></button>';
     });
@@ -7662,17 +7826,20 @@ $("listBody").addEventListener("click", function (ev) {
 function signHTML(q, idx) { var k = SIGN_OF[q][idx]; return k ? SIGNS[k] : ""; }
 function renderPlay() {
   var sc = App.sc, a = E.answerOf(sc);
-  $("playSit").textContent = sitText(sc);
+  $("playSit").textContent = sitText(sc, false);
+  $("playBases").innerHTML = basesHTML(sc);
+  var kind = WD.playKind(sc, App.words);
   $("playCall").innerHTML = '<span style="display:inline-flex;align-items:center;gap:10px;color:'
     + (a.idx === 0 ? "var(--red)" : "var(--green-deep)") + '">' + signHTML(sc.q, a.idx)
-    + '<b style="font-size:1.15rem">' + a.call + "</b></span>"
-    + '<div class="note" style="margin-top:4px">' + a.detail.reason + "</div>";
-  $("playWatch").textContent = sc.watch;
+    + '<b style="font-size:1.15rem">' + callsOf(sc)[a.idx] + "</b></span>"
+    + (kind ? '<div class="note" style="margin-top:4px">' + kind + "</div>" : "")
+    + '<div class="note" style="margin-top:4px">' + WD.text(a.detail.reason, App.words) + "</div>";
+  $("playWatch").textContent = WD.text(sc.watch, App.words);
   var cam = sc.cam || W.CAMS[V.camKeyOf(sc)];
   var focus = TD.toScreen([cam.at[0], cam.at[2]]);
   $("playTop").innerHTML = TD.fieldSVG("play", TD.viewWedge(cam.pos, cam.at)
     + TD.focusSVG(focus) + TD.umpireSVG(sc.role, TD.toScreen([cam.pos[0], cam.pos[2]]), { mine: true }));
-  $("playPos").textContent = sc.why;
+  $("playPos").textContent = WD.text(sc.why, App.words);
   playScene("playField", sc, "teach");
 }
 $("btnReplay").onclick = function () { playScene("playField", App.sc, "teach"); };
@@ -7683,14 +7850,8 @@ function startQuiz() {
   App.quiz = { list: list, i: 0, correct: 0, answered: false, ready: false };
   go("quiz");
 }
-function askText(sc) {
-  var q = sc.q;
-  if (q === "pitch") return "ストライクか、ボールか。";
-  if (q === "fairfoul") return "フェアか、ファウルか。";
-  if (q === "tagup") return "離塁は正当か、早いか。";
-  if (q === "catch") return "捕球か、落球か。";
-  return "アウトか、セーフか。";
-}
+function askText(sc) { return WD.ask(sc.q, App.words); }
+function callsOf(sc) { return WD.calls(sc.q, E.CALLS[sc.q], App.words); }
 function renderQuestion() {
   var q = App.quiz, sc = q.list[q.i];
   R3.paint($("qField"), sc, q.answered ? E.answerOf(sc).tStar : 0,
@@ -7701,11 +7862,12 @@ function renderQuiz() {
   q.answered = false; q.ready = false;
   $("qCount").textContent = "ジャッジ " + (q.i + 1) + " / " + q.list.length;
   $("qScore").textContent = "正解 " + q.correct;
-  $("qSit").textContent = sitText(sc);
+  $("qSit").textContent = sitText(sc, true);
+  $("qBases").innerHTML = basesHTML(sc);
   $("qAsk").innerHTML = "きみは <b>" + E.ROLE_JA[App.role] + "</b>。" + askText(sc)
     + '<span class="hint">一度だけ実速で流れます。見終わってからコールしてください</span>';
   $("qFeedback").style.display = "none"; $("qFeedback").innerHTML = "";
-  var calls = E.CALLS[sc.q];
+  var calls = callsOf(sc);
   $("qActions").innerHTML = '<div class="calls">'
     + '<button class="call out" id="call0" disabled>' + signHTML(sc.q, 0) + calls[0] + "</button>"
     + '<button class="call safe" id="call1" disabled>' + signHTML(sc.q, 1) + calls[1] + "</button></div>";
@@ -7731,10 +7893,12 @@ function answer(idx) {
   $("qFeedback").innerHTML =
     '<div class="judge ' + (res.correct ? "ok" : "ng") + '">'
     + '<div class="mark">' + (res.correct ? "◯ 正解" : "✕ ちがう") + "</div>"
-    + '<div class="ans">正しいコールは「' + a.call + '」</div>'
-    + '<div class="reason">' + a.detail.reason + "</div></div>"
-    + '<div class="info"><div class="ttl">見るポイント</div><div class="body">' + sc.watch + "</div></div>"
-    + '<div class="info split"><div id="qTop"></div><div><div class="ttl">立ち位置</div><div class="body note">' + sc.why + "</div></div></div>";
+    + '<div class="ans">正しいコールは「' + callsOf(sc)[a.idx] + '」</div>'
+    + (WD.playKind(sc, App.words) ? '<div class="reason">' + WD.playKind(sc, App.words) + "</div>" : "")
+    + '<div class="reason">' + WD.text(a.detail.reason, App.words) + "</div>"
+    + '<div class="reason" style="opacity:.8">場面：' + WD.text(sc.title, App.words) + "</div></div>"
+    + '<div class="info"><div class="ttl">見るポイント</div><div class="body">' + WD.text(sc.watch, App.words) + "</div></div>"
+    + '<div class="info split"><div id="qTop"></div><div><div class="ttl">立ち位置</div><div class="body note">' + WD.text(sc.why, App.words) + "</div></div></div>";
   var cam = sc.cam || W.CAMS[V.camKeyOf(sc)];
   $("qTop").innerHTML = TD.fieldSVG("q" + q.i, TD.viewWedge(cam.pos, cam.at)
     + TD.focusSVG(TD.toScreen([cam.at[0], cam.at[2]])) + TD.umpireSVG(sc.role, TD.toScreen([cam.pos[0], cam.pos[2]]), { mine: true }));
